@@ -34,12 +34,18 @@ void idct_cpu(
     const std::vector<std::vector<uint16_t>>& qtable,
     const std::vector<int>& num_blocks);
 
-bool idct(
+// needed for rounding up the allocation
+constexpr int num_idct_blocks_per_thread_block_naive = 4;
+
+bool idct_naive(
     std::vector<gpu_buf<uint8_t>>& pixels,
     const std::vector<gpu_buf<int16_t>>& coeffs,
     const std::vector<gpu_buf<uint16_t>>& qtable,
     const std::vector<int>& num_blocks,
     cudaStream_t stream);
+
+// needed for rounding up the allocation
+constexpr int num_idct_blocks_per_thread_block_lut = 4;
 
 bool idct_lut(
     std::vector<gpu_buf<uint8_t>>& pixels,
@@ -47,6 +53,9 @@ bool idct_lut(
     const std::vector<gpu_buf<uint16_t>>& qtable,
     const std::vector<int>& num_blocks,
     cudaStream_t stream);
+
+// needed for rounding up the allocation
+constexpr int num_idct_blocks_per_thread_block_seperable = 4;
 
 bool idct_seperable(
     std::vector<gpu_buf<uint8_t>>& pixels,

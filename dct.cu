@@ -102,29 +102,23 @@ __device__ constexpr float lut_gpu[dct_block_size] = {
 
 __device__ float clampf(float x, float min, float max) { return fmaxf(min, fminf(x, max)); }
 
-// 64 values in one idct
-constexpr int idct_blocks_per_thread_block  = 4;
-constexpr int num_elements_per_thread_block = idct_blocks_per_thread_block * dct_block_size;
+constexpr int num_elements_per_thread_block_naive =
+    num_idct_blocks_per_thread_block_naive * dct_block_size;
 
 // naive version, every thread handles one value
 __global__ void idct_kernel(
     uint8_t* pixels, const int16_t* coeffs, const uint16_t* qtable, int num_blocks)
 {
-    assert(blockDim.x == num_elements_per_thread_block);
-    const int block_off = num_elements_per_thread_block * blockIdx.x;
+    assert(blockDim.x == num_elements_per_thread_block_naive);
+    const int block_off = num_elements_per_thread_block_naive * blockIdx.x;
     const int pixel_idx = block_off + threadIdx.x;
 
     // do not early exit partial blocks because all threads must participate in load and sync
 
-    __shared__ int16_t coeffs_shared[num_elements_per_thread_block];
-    for (int i = threadIdx.x; i < num_elements_per_thread_block; i += blockDim.x) {
+    __shared__ int16_t coeffs_shared[num_elements_per_thread_block_naive];
+    for (int i = threadIdx.x; i < num_elements_per_thread_block_naive; i += blockDim.x) {
         const int load_idx = block_off + i;
-        if (load_idx < num_blocks * dct_block_size) {
-            coeffs_shared[i] = coeffs[load_idx];
-        } else {
-            // always initialize all values
-            coeffs_shared[i] = 0;
-        }
+        coeffs_shared[i]   = coeffs[load_idx];
     }
 
     __shared__ uint16_t qtable_shared[dct_block_size];
@@ -134,10 +128,6 @@ __global__ void idct_kernel(
     }
 
     __syncthreads();
-
-    if (pixel_idx >= num_blocks * dct_block_size) {
-        return;
-    }
 
     const int idx_of_block = threadIdx.x / dct_block_size;
     const int idx_in_block = threadIdx.x % dct_block_size;
@@ -170,7 +160,7 @@ __global__ void idct_kernel(
 
 } // namespace
 
-bool idct(
+bool idct_naive(
     std::vector<gpu_buf<uint8_t>>& pixels,
     const std::vector<gpu_buf<int16_t>>& coeffs,
     const std::vector<gpu_buf<uint16_t>>& qtable,
@@ -185,9 +175,9 @@ bool idct(
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = num_blocks[c];
 
-        const int kernel_block_size = num_elements_per_thread_block;
-        const int num_kernel_blocks =
-            ceiling_div(num_blocks_c, static_cast<unsigned int>(idct_blocks_per_thread_block));
+        const int kernel_block_size = num_elements_per_thread_block_naive;
+        assert(num_blocks_c % num_idct_blocks_per_thread_block_naive == 0);
+        const int num_kernel_blocks = num_blocks_c / num_idct_blocks_per_thread_block_naive;
 
         idct_kernel<<<num_kernel_blocks, kernel_block_size, 0, stream>>>(
             pixels[c].ptr, coeffs[c].ptr, qtable[c].ptr, num_blocks_c);
@@ -199,24 +189,22 @@ bool idct(
 
 namespace {
 
+constexpr int num_elements_per_thread_block_lut =
+    num_idct_blocks_per_thread_block_lut * dct_block_size;
+
 __global__ void idct_lut_kernel(
     uint8_t* pixels, const int16_t* coeffs, const uint16_t* qtable, int num_blocks)
 {
-    assert(blockDim.x == num_elements_per_thread_block);
-    const int block_off = num_elements_per_thread_block * blockIdx.x;
+    assert(blockDim.x == num_elements_per_thread_block_lut);
+    const int block_off = num_elements_per_thread_block_lut * blockIdx.x;
     const int pixel_idx = block_off + threadIdx.x;
 
     // do not early exit partial blocks because all threads must participate in load and sync
 
-    __shared__ int16_t coeffs_shared[num_elements_per_thread_block];
-    for (int i = threadIdx.x; i < num_elements_per_thread_block; i += blockDim.x) {
+    __shared__ int16_t coeffs_shared[num_elements_per_thread_block_lut];
+    for (int i = threadIdx.x; i < num_elements_per_thread_block_lut; i += blockDim.x) {
         const int load_idx = block_off + i;
-        if (load_idx < num_blocks * dct_block_size) {
-            coeffs_shared[i] = coeffs[load_idx];
-        } else {
-            // always initialize all values
-            coeffs_shared[i] = 0;
-        }
+        coeffs_shared[i]   = coeffs[load_idx];
     }
 
     __shared__ uint16_t qtable_shared[dct_block_size];
@@ -272,9 +260,9 @@ bool idct_lut(
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = num_blocks[c];
 
-        const int kernel_block_size = num_elements_per_thread_block;
-        const int num_kernel_blocks =
-            ceiling_div(num_blocks_c, static_cast<unsigned int>(idct_blocks_per_thread_block));
+        const int kernel_block_size = num_elements_per_thread_block_lut;
+        assert(num_blocks_c % num_idct_blocks_per_thread_block_lut == 0);
+        const int num_kernel_blocks = num_blocks_c / num_idct_blocks_per_thread_block_lut;
 
         idct_lut_kernel<<<num_kernel_blocks, kernel_block_size, 0, stream>>>(
             pixels[c].ptr, coeffs[c].ptr, qtable[c].ptr, num_blocks_c);
@@ -286,24 +274,22 @@ bool idct_lut(
 
 namespace {
 
+constexpr int num_elements_per_thread_block_seperable =
+    num_idct_blocks_per_thread_block_seperable * dct_block_size;
+
 __global__ void idct_seperable_kernel(
     uint8_t* pixels, const int16_t* coeffs, const uint16_t* qtable, int num_blocks)
 {
-    assert(blockDim.x == num_elements_per_thread_block);
-    const int block_off = num_elements_per_thread_block * blockIdx.x;
+    assert(blockDim.x == num_elements_per_thread_block_seperable);
+    const int block_off = num_elements_per_thread_block_seperable * blockIdx.x;
     const int pixel_idx = block_off + threadIdx.x;
 
     // do not early exit partial blocks because all threads must participate in load and sync
 
-    __shared__ int16_t coeffs_shared[num_elements_per_thread_block];
-    for (int i = threadIdx.x; i < num_elements_per_thread_block; i += blockDim.x) {
+    __shared__ int16_t coeffs_shared[num_elements_per_thread_block_seperable];
+    for (int i = threadIdx.x; i < num_elements_per_thread_block_seperable; i += blockDim.x) {
         const int load_idx = block_off + i;
-        if (load_idx < num_blocks * dct_block_size) {
-            coeffs_shared[i] = coeffs[load_idx];
-        } else {
-            // always initialize all values
-            coeffs_shared[i] = 0;
-        }
+        coeffs_shared[i]   = coeffs[load_idx];
     }
 
     __shared__ uint16_t qtable_shared[dct_block_size];
@@ -320,7 +306,7 @@ __global__ void idct_seperable_kernel(
     const int x            = idx_in_block % dct_block_dim;
 
     float f;
-    __shared__ float coeffs_intermediate[num_elements_per_thread_block];
+    __shared__ float coeffs_intermediate[num_elements_per_thread_block_seperable];
 
     // perform the inner loop of `idct_lut_kernel` with v = y
     f = 0.f;
@@ -363,9 +349,9 @@ bool idct_seperable(
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = num_blocks[c];
 
-        const int kernel_block_size = num_elements_per_thread_block;
-        const int num_kernel_blocks =
-            ceiling_div(num_blocks_c, static_cast<unsigned int>(idct_blocks_per_thread_block));
+        const int kernel_block_size = num_elements_per_thread_block_seperable;
+        assert(num_blocks_c % num_idct_blocks_per_thread_block_seperable == 0);
+        const int num_kernel_blocks = num_blocks_c / num_idct_blocks_per_thread_block_seperable;
 
         idct_seperable_kernel<<<num_kernel_blocks, kernel_block_size, 0, stream>>>(
             pixels[c].ptr, coeffs[c].ptr, qtable[c].ptr, num_blocks_c);

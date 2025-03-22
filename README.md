@@ -17,6 +17,7 @@ stretch goals
 - fdct
 - cpu simd version
 - make cpu_buf to mirror, proper error handling on null malloc
+- add syntethic test and benchmark?
 
 steps in optimization are:
 - naive version

@@ -27,6 +27,7 @@
 #include <array>
 #include <cassert>
 #include <cstdio>
+#include <numeric>
 #include <stdint.h>
 #include <vector>
 
@@ -89,6 +90,8 @@ bool test(const char* filename)
     assert(img.num_blocks_y.size() == img.num_blocks.size());
     const int num_components = img.coeffs.size();
 
+    std::vector<int> num_blocks_aligned(num_components);
+
     std::vector<gpu_buf<uint8_t>> d_pixels_gold(num_components);
     std::vector<gpu_buf<uint8_t>> d_pixels(num_components);
 
@@ -97,18 +100,33 @@ bool test(const char* filename)
     std::vector<gpu_buf<uint16_t>> d_qtables(num_components);
     std::vector<float> vals(num_components);
 
-    for (int c = 0; c < num_components; ++c) {
-        const size_t num_elements = dct_block_size * img.num_blocks[c];
-        assert(num_elements == img.coeffs[c].size());
+    const int num_blocks_lcm = std::lcm(
+        std::lcm(num_idct_blocks_per_thread_block_naive, num_idct_blocks_per_thread_block_lut),
+        std::lcm(
+            num_idct_blocks_per_thread_block_seperable, num_idct_blocks_per_thread_block_gpujpeg));
 
-        h_pixels[c].resize(num_elements);
-        RETURN_IF_ERR_CUDA(d_pixels[c].resize(num_elements));
-        RETURN_IF_ERR_CUDA(d_coeffs[c].resize(num_elements));
+    for (int c = 0; c < num_components; ++c) {
+        const int num_blocks_c = img.num_blocks[c];
+        const int num_blocks_c_aligned =
+            ceiling_div(num_blocks_c, static_cast<unsigned int>(num_blocks_lcm)) * num_blocks_lcm;
+        num_blocks_aligned[c] = num_blocks_c_aligned;
+
+        const size_t num_elements = dct_block_size * num_blocks_c;
+        assert(num_elements == img.coeffs[c].size());
+        const size_t num_elements_aligned = dct_block_size * num_blocks_c_aligned;
+
+        h_pixels[c].resize(num_elements_aligned);
+        RETURN_IF_ERR_CUDA(d_pixels[c].resize(num_elements_aligned));
+        RETURN_IF_ERR_CUDA(d_coeffs[c].resize(num_elements_aligned));
         RETURN_IF_ERR_CUDA(cudaMemcpy(
             d_coeffs[c].ptr,
             img.coeffs[c].data(),
             num_elements * sizeof(int16_t),
             cudaMemcpyHostToDevice));
+        RETURN_IF_ERR_CUDA(cudaMemset(
+            d_coeffs[c].ptr + num_elements,
+            0,
+            (num_elements_aligned - num_elements) * sizeof(int16_t)));
         RETURN_IF_ERR_CUDA(d_pixels_gold[c].resize(num_elements));
 
         assert(img.qtable[c].size() == dct_block_size);
@@ -130,8 +148,8 @@ bool test(const char* filename)
 
     cudaStream_t stream = nullptr;
 
-    // gpu implementation
-    idct(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
+    // gpu implementations
+    idct_naive(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("naive", vals);
     if (true) {
@@ -140,7 +158,7 @@ bool test(const char* filename)
         write_ppm(img, filename_out, h_pixels);
     }
 
-    idct_lut(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
+    idct_lut(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("lut", vals);
     if (true) {
@@ -149,7 +167,7 @@ bool test(const char* filename)
         write_ppm(img, filename_out, h_pixels);
     }
 
-    idct_seperable(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
+    idct_seperable(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("seperable", vals);
     if (true) {
@@ -158,7 +176,7 @@ bool test(const char* filename)
         write_ppm(img, filename_out, h_pixels);
     }
 
-    idct_gpujpeg(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
+    idct_gpujpeg(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("gpujpeg", vals);
     if (true) {

@@ -30,6 +30,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(CUDAToolkit REQUIRED)
 
+# not always best practice, however for this project the target is fixed 
+set(CMAKE_CUDA_ARCHITECTURES 75)
+
 set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_EXTENSIONS OFF)
@@ -40,6 +43,7 @@ find_package(JPEG REQUIRED 80)
 add_library(gpudct STATIC dct.cu util.cpp gpujpeg.cu)
 target_link_libraries(gpudct PRIVATE JPEG::JPEG CUDA::cudart_static)
 target_include_directories(gpudct PUBLIC .)
+# target_compile_options(gpudct PRIVATE $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:--fast-math>)
 
 add_executable(gpudct_test test.cpp psnr.cu)
 target_link_libraries(gpudct_test PRIVATE gpudct CUDA::cudart_static)

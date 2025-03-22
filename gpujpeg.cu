@@ -69,10 +69,6 @@
 #define GPUJPEG_BLOCK_SQUARED_SIZE 64
 #define GPUJPEG_MAX_BLOCK_COMPRESSED_SIZE (GPUJPEG_BLOCK_SIZE * GPUJPEG_BLOCK_SIZE * 8)
 
-#define GPUJPEG_IDCT_BLOCK_X 8
-#define GPUJPEG_IDCT_BLOCK_Y 8
-#define GPUJPEG_IDCT_BLOCK_Z 2
-
 //PTX code for IDCT (GPUJPEG_IDCT_GPU_KERNEL_INPLACE macro) should be a bit faster
 //but maybe won't work for newer CCs
 #define GPUJPEG_IDCT_USE_ASM 0
@@ -303,14 +299,11 @@ __device__ void gpujpeg_idct_gpu_kernel_inplace(float* V8)
   * @param source             [IN]  - Source coefficients
   * @param output             [OUT] - Result coefficients
   * @param quantization_table [IN]  - Quantization table
-  * @param num_blocks         [IN]  - Number of blocks
   * @return None
   */
 __global__ void gpujpeg_idct_gpu_kernel(
-    int16_t* source, uint8_t* result, uint16_t* quantization_table, int num_blocks)
+    int16_t* source, uint8_t* result, uint16_t* quantization_table)
 {
-    // TODO(nol) deal with `num_blocks`
-
     //here the grid is assumed to be only in x - it saves a few operations; if a larger
     //block count is used (e. g. GPUJPEG_IDCT_BLOCK_Z == 1), it would need to be adjusted,
     //the blockIdx.x not to exceed 65535. In the current state this function is good
@@ -486,21 +479,13 @@ bool idct_gpujpeg(
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = num_blocks[c];
 
-        const unsigned int num_dct_blocks_per_thread_block =
-            GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z;
-
-        // TODO(nol) prevent oob, either kernel check or rounding up allocation (better)
-        assert(num_blocks_c % num_dct_blocks_per_thread_block = 0);
-
-        const unsigned int num_elements_per_block =
-            num_dct_blocks_per_thread_block / GPUJPEG_BLOCK_SIZE;
-
-        const dim3 num_kernel_blocks = ceiling_div(num_blocks_c, num_elements_per_block);
+        assert(num_blocks_c % num_idct_blocks_per_thread_block_gpujpeg == 0);
+        const dim3 num_kernel_blocks = num_blocks_c / num_idct_blocks_per_thread_block_gpujpeg;
         const dim3 kernel_block_size =
             dim3(GPUJPEG_IDCT_BLOCK_X, GPUJPEG_IDCT_BLOCK_Y, GPUJPEG_IDCT_BLOCK_Z);
 
         gpujpeg_idct_gpu_kernel<<<num_kernel_blocks, kernel_block_size, 0, stream>>>(
-            coeffs[c].ptr, pixels[c].ptr, qtable[c].ptr, num_blocks_c);
+            coeffs[c].ptr, pixels[c].ptr, qtable[c].ptr);
         RETURN_IF_ERR_CUDA(cudaPeekAtLastError());
     }
 
