@@ -80,6 +80,15 @@ void print_result(const char* name, const std::vector<float>& vals)
     printf("]\n");
 }
 
+bool clear_pixels(std::vector<gpu_buf<uint8_t>>& d_pixels)
+{
+    for (size_t c = 0; c < d_pixels.size(); ++c) {
+        RETURN_IF_ERR_CUDA(cudaMemset(d_pixels[c].ptr, 0, d_pixels[c].num * sizeof(uint8_t)));
+    }
+
+    return true;
+}
+
 bool test(const char* filename)
 {
     image img;
@@ -103,7 +112,10 @@ bool test(const char* filename)
     const int num_blocks_lcm = std::lcm(
         std::lcm(num_idct_blocks_per_thread_block_naive, num_idct_blocks_per_thread_block_lut),
         std::lcm(
-            num_idct_blocks_per_thread_block_seperable, num_idct_blocks_per_thread_block_gpujpeg));
+            num_idct_blocks_per_thread_block_seperable,
+            std::lcm(
+                num_idct_blocks_per_thread_block_memory,
+                num_idct_blocks_per_thread_block_gpujpeg)));
 
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = img.num_blocks[c];
@@ -158,6 +170,8 @@ bool test(const char* filename)
         write_ppm(img, filename_out, h_pixels);
     }
 
+    RETURN_IF_ERR(clear_pixels(d_pixels));
+
     idct_lut(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("lut", vals);
@@ -167,6 +181,8 @@ bool test(const char* filename)
         write_ppm(img, filename_out, h_pixels);
     }
 
+    RETURN_IF_ERR(clear_pixels(d_pixels));
+
     idct_seperable(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("seperable", vals);
@@ -175,6 +191,19 @@ bool test(const char* filename)
         const std::string filename_out(std::string(filename) + "_seperable.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
+
+    RETURN_IF_ERR(clear_pixels(d_pixels));
+
+    idct_memory(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
+    RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
+    print_result("memory", vals);
+    if (true) {
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        const std::string filename_out(std::string(filename) + "_memory.ppm");
+        write_ppm(img, filename_out, h_pixels);
+    }
+
+    RETURN_IF_ERR(clear_pixels(d_pixels));
 
     idct_gpujpeg(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));

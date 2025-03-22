@@ -48,7 +48,10 @@ bool benchmark(const char* filename)
     const int num_blocks_lcm = std::lcm(
         std::lcm(num_idct_blocks_per_thread_block_naive, num_idct_blocks_per_thread_block_lut),
         std::lcm(
-            num_idct_blocks_per_thread_block_seperable, num_idct_blocks_per_thread_block_gpujpeg));
+            num_idct_blocks_per_thread_block_seperable,
+            std::lcm(
+                num_idct_blocks_per_thread_block_memory,
+                num_idct_blocks_per_thread_block_gpujpeg)));
 
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = img.num_blocks[c];
@@ -109,19 +112,23 @@ bool benchmark(const char* filename)
     };
 
     measure("naive", [&]() {
-        RETURN_IF_ERR(idct_naive(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream));
+        RETURN_IF_ERR(idct_naive(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
     measure("lut", [&]() {
-        RETURN_IF_ERR(idct_lut(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream));
+        RETURN_IF_ERR(idct_lut(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
     measure("seperable", [&]() {
-        RETURN_IF_ERR(idct_seperable(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream));
+        RETURN_IF_ERR(idct_seperable(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
+        return true;
+    });
+    measure("memory", [&]() {
+        RETURN_IF_ERR(idct_memory(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
     measure("gpujpeg", [&]() {
-        RETURN_IF_ERR(idct_gpujpeg(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream));
+        RETURN_IF_ERR(idct_gpujpeg(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
 
