@@ -17,3 +17,10 @@ stretch goals
 - fdct
 - cpu simd version
 - make cpu_buf to mirror, proper error handling on null malloc
+
+steps in optimization are:
+- naive version
+- lut for cosine-ish coefficients
+- seperable computation
+- loading and storing optimizaiton
+- micro optimization?

@@ -123,44 +123,44 @@ bool test(const char* filename)
     // gold implementation
     idct_cpu(h_pixels, img.coeffs, img.qtable, img.num_blocks);
     if (true) {
-        const std::string filename_out(std::string(filename) + "_cpu_gold.ppm");
-        write_ppm(img, filename_out, h_pixels);
-    }
-    RETURN_IF_ERR(pixels_htod(d_pixels_gold, h_pixels));
-
-    idct_cpu_lut(h_pixels, img.coeffs, img.qtable, img.num_blocks);
-    RETURN_IF_ERR(pixels_htod(d_pixels, h_pixels));
-    RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
-    print_result("cpu lut", vals);
-    if (true) {
         const std::string filename_out(std::string(filename) + "_cpu.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
+    RETURN_IF_ERR(pixels_htod(d_pixels_gold, h_pixels));
 
     cudaStream_t stream = nullptr;
 
     // gpu implementation
     idct(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
-    print_result("gpu naive", vals);
+    print_result("naive", vals);
     if (true) {
         RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
-        const std::string filename_out(std::string(filename) + "_gpu.ppm");
+        const std::string filename_out(std::string(filename) + "_naive.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
 
     idct_lut(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
-    print_result("gpu lut", vals);
+    print_result("lut", vals);
     if (true) {
         RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
-        const std::string filename_out(std::string(filename) + "_gpu_lut.ppm");
+        const std::string filename_out(std::string(filename) + "_lut.ppm");
+        write_ppm(img, filename_out, h_pixels);
+    }
+
+    idct_seperable(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
+    RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
+    print_result("seperable", vals);
+    if (true) {
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        const std::string filename_out(std::string(filename) + "_seperable.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
 
     idct_gpujpeg(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
-    print_result("gpu gpujpeg", vals);
+    print_result("gpujpeg", vals);
     if (true) {
         RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
         const std::string filename_out(std::string(filename) + "_gpujpeg.ppm");

@@ -34,12 +34,6 @@ void idct_cpu(
     const std::vector<std::vector<uint16_t>>& qtable,
     const std::vector<int>& num_blocks);
 
-void idct_cpu_lut(
-    std::vector<std::vector<uint8_t>>& pixels,
-    const std::vector<std::vector<int16_t>>& coeffs,
-    const std::vector<std::vector<uint16_t>>& qtable,
-    const std::vector<int>& num_blocks);
-
 bool idct(
     std::vector<gpu_buf<uint8_t>>& pixels,
     const std::vector<gpu_buf<int16_t>>& coeffs,
@@ -48,6 +42,13 @@ bool idct(
     cudaStream_t stream);
 
 bool idct_lut(
+    std::vector<gpu_buf<uint8_t>>& pixels,
+    const std::vector<gpu_buf<int16_t>>& coeffs,
+    const std::vector<gpu_buf<uint16_t>>& qtable,
+    const std::vector<int>& num_blocks,
+    cudaStream_t stream);
+
+bool idct_seperable(
     std::vector<gpu_buf<uint8_t>>& pixels,
     const std::vector<gpu_buf<int16_t>>& coeffs,
     const std::vector<gpu_buf<uint16_t>>& qtable,

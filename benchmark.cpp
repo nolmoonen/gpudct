@@ -99,6 +99,10 @@ bool benchmark(const char* filename)
         RETURN_IF_ERR(idct_lut(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream));
         return true;
     });
+    measure("gpu seperable", [&]() {
+        RETURN_IF_ERR(idct_seperable(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream));
+        return true;
+    });
     measure("gpujpeg", [&]() {
         RETURN_IF_ERR(idct_gpujpeg(d_pixels, d_coeffs, d_qtables, img.num_blocks, stream));
         return true;
