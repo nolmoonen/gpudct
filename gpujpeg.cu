@@ -65,6 +65,10 @@
   *
   */
 
+#define GPUJPEG_IDCT_BLOCK_X 8
+#define GPUJPEG_IDCT_BLOCK_Y 8
+#define GPUJPEG_IDCT_BLOCK_Z 2
+
 #define GPUJPEG_BLOCK_SIZE 8
 #define GPUJPEG_BLOCK_SQUARED_SIZE 64
 #define GPUJPEG_MAX_BLOCK_COMPRESSED_SIZE (GPUJPEG_BLOCK_SIZE * GPUJPEG_BLOCK_SIZE * 8)
@@ -462,7 +466,18 @@ __global__ void gpujpeg_idct_gpu_kernel(
     *((uint64_t*)resultPtr) = tempResult;
 }
 
+constexpr int num_elements_per_thread_block_gpujpeg =
+    8 * GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z;
+static_assert(num_elements_per_thread_block_gpujpeg % dct_block_size == 0);
+constexpr int num_idct_blocks_per_thread_block_gpujpeg =
+    num_elements_per_thread_block_gpujpeg / dct_block_size;
+
 } // namespace
+
+int get_num_idct_blocks_per_thread_block_gpujpeg()
+{
+    return num_idct_blocks_per_thread_block_gpujpeg;
+}
 
 bool idct_gpujpeg(
     std::vector<gpu_buf<uint8_t>>& pixels,

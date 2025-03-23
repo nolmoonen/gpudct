@@ -46,12 +46,14 @@ bool benchmark(const char* filename)
     std::vector<gpu_buf<uint16_t>> d_qtables(num_components);
 
     const int num_blocks_lcm = std::lcm(
-        std::lcm(num_idct_blocks_per_thread_block_naive, num_idct_blocks_per_thread_block_lut),
         std::lcm(
-            num_idct_blocks_per_thread_block_seperable,
+            get_num_idct_blocks_per_thread_block_naive(),
+            get_num_idct_blocks_per_thread_block_lut()),
+        std::lcm(
+            get_num_idct_blocks_per_thread_block_seperable(),
             std::lcm(
-                num_idct_blocks_per_thread_block_memory,
-                num_idct_blocks_per_thread_block_gpujpeg)));
+                get_num_idct_blocks_per_thread_block_decomposed(),
+                get_num_idct_blocks_per_thread_block_gpujpeg())));
 
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = img.num_blocks[c];
@@ -123,8 +125,8 @@ bool benchmark(const char* filename)
         RETURN_IF_ERR(idct_seperable(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
-    measure("memory", [&]() {
-        RETURN_IF_ERR(idct_memory(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
+    measure("decomposed", [&]() {
+        RETURN_IF_ERR(idct_decomposed(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
     measure("gpujpeg", [&]() {

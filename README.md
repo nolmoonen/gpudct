@@ -25,3 +25,6 @@ steps in optimization are:
 - seperable computation
 - loading and storing optimizaiton
 - micro optimization?
+
+todo
+- maybe do not use maximum psnr but normal psnr, as this version is very sensitive to minor changes. the problem is that the order of the multiplications of `qval`, `coeff`, and constants starts to matter.

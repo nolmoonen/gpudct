@@ -26,15 +26,7 @@
 #include <stdint.h>
 #include <vector>
 
-#define GPUJPEG_IDCT_BLOCK_X 8
-#define GPUJPEG_IDCT_BLOCK_Y 8
-#define GPUJPEG_IDCT_BLOCK_Z 2
-
-constexpr int num_elements_per_thread_block_gpujpeg =
-    8 * GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z;
-static_assert(num_elements_per_thread_block_gpujpeg % dct_block_size == 0);
-constexpr int num_idct_blocks_per_thread_block_gpujpeg =
-    num_elements_per_thread_block_gpujpeg / dct_block_size;
+int get_num_idct_blocks_per_thread_block_gpujpeg();
 
 bool idct_gpujpeg(
     std::vector<gpu_buf<uint8_t>>& pixels,

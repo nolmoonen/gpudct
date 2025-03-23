@@ -110,12 +110,14 @@ bool test(const char* filename)
     std::vector<float> vals(num_components);
 
     const int num_blocks_lcm = std::lcm(
-        std::lcm(num_idct_blocks_per_thread_block_naive, num_idct_blocks_per_thread_block_lut),
         std::lcm(
-            num_idct_blocks_per_thread_block_seperable,
+            get_num_idct_blocks_per_thread_block_naive(),
+            get_num_idct_blocks_per_thread_block_lut()),
+        std::lcm(
+            get_num_idct_blocks_per_thread_block_seperable(),
             std::lcm(
-                num_idct_blocks_per_thread_block_memory,
-                num_idct_blocks_per_thread_block_gpujpeg)));
+                get_num_idct_blocks_per_thread_block_decomposed(),
+                get_num_idct_blocks_per_thread_block_gpujpeg())));
 
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = img.num_blocks[c];
@@ -194,12 +196,12 @@ bool test(const char* filename)
 
     RETURN_IF_ERR(clear_pixels(d_pixels));
 
-    idct_memory(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
+    idct_decomposed(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
-    print_result("memory", vals);
+    print_result("decomposed", vals);
     if (true) {
         RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
-        const std::string filename_out(std::string(filename) + "_memory.ppm");
+        const std::string filename_out(std::string(filename) + "_decomposed.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
 
