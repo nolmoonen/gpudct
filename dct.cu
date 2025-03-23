@@ -376,12 +376,13 @@ bool idct_seperable(
 namespace {
 
 constexpr int num_idct_blocks_per_thread_block_decomposed = 32; // tunable
-constexpr int num_elements_per_thread                     = 8;
-constexpr int num_threads_per_idct_block = dct_block_size / num_elements_per_thread;
+constexpr int num_elements_per_thread_decomposed          = 8;
+constexpr int num_threads_per_idct_block_decomposed =
+    dct_block_size / num_elements_per_thread_decomposed;
 constexpr int num_threads_per_thread_block_decomposed =
-    num_threads_per_idct_block * num_idct_blocks_per_thread_block_decomposed;
+    num_threads_per_idct_block_decomposed * num_idct_blocks_per_thread_block_decomposed;
 constexpr int num_elements_per_thread_block_decomposed =
-    num_threads_per_thread_block_decomposed * num_elements_per_thread;
+    num_threads_per_thread_block_decomposed * num_elements_per_thread_decomposed;
 
 // High-Efficiency and Low-Power Architectures for 2-D DCT and IDCT Based on CORDIC Rotation, Sung et al. 2006
 __device__ void idct_vector(float vals[8])
@@ -438,44 +439,43 @@ __global__ void idct_decomposed_kernel(
 
     __syncthreads();
 
-    __shared__ float coeffs_shared[num_elements_per_thread_block_decomposed];
-    for (int i = threadIdx.x; i < num_elements_per_thread_block_decomposed; i += blockDim.x) {
-        const int load_idx = block_off + i;
-        coeffs_shared[i] = coeffs[load_idx] * static_cast<float>(qtable_shared[i % dct_block_size]);
-    }
-    __syncthreads();
-
     const int row_idx        = threadIdx.x % dct_block_dim;
     const int idct_block_idx = threadIdx.x / dct_block_dim;
 
+    // idct block offset
     const int off_in_block = dct_block_size * idct_block_idx;
 
-    float* idct_block_coeffs = coeffs_shared + off_in_block;
+    int16_t coeffs_local[8];
+    *reinterpret_cast<uint4*>(coeffs_local) =
+        reinterpret_cast<const uint4*>(coeffs + block_off + off_in_block)[row_idx];
 
     float vals[8];
-
-    for (int i = 0; i < dct_block_dim; ++i) {
-        vals[i] = idct_block_coeffs[dct_block_dim * row_idx + i];
+    for (int i = 0; i < 8; ++i) {
+        vals[i] = coeffs_local[i] * static_cast<float>(qtable_shared[row_idx * 8 + i]);
     }
+
     idct_vector(vals);
+
+    __shared__ float coeffs_shared[num_elements_per_thread_block_decomposed];
+    float* idct_block_coeffs = coeffs_shared + off_in_block;
+
     for (int i = 0; i < dct_block_dim; ++i) {
         idct_block_coeffs[dct_block_dim * row_idx + i] = vals[i];
     }
+
     __syncthreads();
+
     for (int i = 0; i < dct_block_dim; ++i) {
         vals[i] = idct_block_coeffs[dct_block_dim * i + row_idx];
     }
-    idct_vector(vals);
-    for (int i = 0; i < dct_block_dim; ++i) {
-        idct_block_coeffs[dct_block_dim * i + row_idx] = vals[i];
-    }
-    __syncthreads();
 
+    idct_vector(vals);
+
+    // excessive global access, but transposing in shared memory first, is slower
     const int pixel_idx = block_off + off_in_block;
     for (int i = 0; i < dct_block_dim; ++i) {
-        const int idx = dct_block_dim * row_idx + i;
-
-        const float val = 128 + std::roundf(idct_block_coeffs[idx]);
+        const int idx   = dct_block_dim * i + row_idx;
+        const float val = 128 + std::roundf(vals[i]);
 
         pixels[pixel_idx + idx] = clampf(val, 0.f, 255.f);
     }
@@ -514,3 +514,233 @@ bool idct_decomposed(
 
     return true;
 }
+
+namespace {
+
+constexpr int num_idct_blocks_per_thread_block_no_shared = 32; // tunable
+constexpr int num_elements_per_thread_memory             = 8;
+constexpr int num_threads_per_idct_block_memory = dct_block_size / num_elements_per_thread_memory;
+constexpr int num_threads_per_thread_block_no_shared =
+    num_threads_per_idct_block_memory * num_idct_blocks_per_thread_block_no_shared;
+
+__device__ void transpose(float vals[8])
+{
+    // https://forums.developer.nvidia.com/t/implement-2d-matrix-transpose-using-warp-shuffle-without-local-memory/208418/10
+
+    float uswap;
+    float u0 = vals[0];
+    float u1 = vals[1];
+    float u2 = vals[2];
+    float u3 = vals[3];
+    float u4 = vals[4];
+    float u5 = vals[5];
+    float u6 = vals[6];
+    float u7 = vals[7];
+
+    // perform 2x2 movement
+    // moving single elements in 2x2 blocks
+    // step 1:
+    if (!(threadIdx.x & 1)) {
+        uswap = u1;
+        u1    = u0;
+        u0    = uswap;
+        uswap = u3;
+        u3    = u2;
+        u2    = uswap;
+        uswap = u5;
+        u5    = u4;
+        u4    = uswap;
+        uswap = u7;
+        u7    = u6;
+        u6    = uswap;
+    }
+    // step 2:
+    u0 = __shfl_xor_sync(0x000000ff, u0, 1);
+    u2 = __shfl_xor_sync(0x000000ff, u2, 1);
+    u4 = __shfl_xor_sync(0x000000ff, u4, 1);
+    u6 = __shfl_xor_sync(0x000000ff, u6, 1);
+    // step 3:
+    if (!(threadIdx.x & 1)) {
+        uswap = u1;
+        u1    = u0;
+        u0    = uswap;
+        uswap = u3;
+        u3    = u2;
+        u2    = uswap;
+        uswap = u5;
+        u5    = u4;
+        u4    = uswap;
+        uswap = u7;
+        u7    = u6;
+        u6    = uswap;
+    }
+
+    // perform 4x4 movement
+    // moving 2x2 elements in 4x4 blocks
+    // step 1:
+    if (!(threadIdx.x & 2)) {
+        uswap = u1;
+        u1    = u3;
+        u3    = uswap;
+        uswap = u0;
+        u0    = u2;
+        u2    = uswap;
+        uswap = u5;
+        u5    = u7;
+        u7    = uswap;
+        uswap = u4;
+        u4    = u6;
+        u6    = uswap;
+    }
+    // step 2:
+    u0 = __shfl_xor_sync(0x000000ff, u0, 2);
+    u1 = __shfl_xor_sync(0x000000ff, u1, 2);
+    u4 = __shfl_xor_sync(0x000000ff, u4, 2);
+    u5 = __shfl_xor_sync(0x000000ff, u5, 2);
+    // step 3:
+    if (!(threadIdx.x & 2)) {
+        uswap = u1;
+        u1    = u3;
+        u3    = uswap;
+        uswap = u0;
+        u0    = u2;
+        u2    = uswap;
+        uswap = u5;
+        u5    = u7;
+        u7    = uswap;
+        uswap = u4;
+        u4    = u6;
+        u6    = uswap;
+    }
+    // perform 8x8 movement
+    // moving 4x4 elements in 8x8 blocks
+    // step 1:
+    if (!(threadIdx.x & 4)) {
+        uswap = u0;
+        u0    = u4;
+        u4    = uswap;
+        uswap = u1;
+        u1    = u5;
+        u5    = uswap;
+        uswap = u2;
+        u2    = u6;
+        u6    = uswap;
+        uswap = u3;
+        u3    = u7;
+        u7    = uswap;
+    }
+    // step 2:
+    u0 = __shfl_xor_sync(0x000000ff, u0, 4);
+    u1 = __shfl_xor_sync(0x000000ff, u1, 4);
+    u2 = __shfl_xor_sync(0x000000ff, u2, 4);
+    u3 = __shfl_xor_sync(0x000000ff, u3, 4);
+    // step 3:
+    if (!(threadIdx.x & 4)) {
+        uswap = u0;
+        u0    = u4;
+        u4    = uswap;
+        uswap = u1;
+        u1    = u5;
+        u5    = uswap;
+        uswap = u2;
+        u2    = u6;
+        u6    = uswap;
+        uswap = u3;
+        u3    = u7;
+        u7    = uswap;
+    }
+
+    vals[0] = u0;
+    vals[1] = u1;
+    vals[2] = u2;
+    vals[3] = u3;
+    vals[4] = u4;
+    vals[5] = u5;
+    vals[6] = u6;
+    vals[7] = u7;
+}
+
+__global__ void idct_no_shared_kernel(
+    uint8_t* pixels, const int16_t* coeffs, const uint16_t* qtable, int num_blocks)
+{
+    assert(blockDim.x == num_threads_per_thread_block_decomposed);
+    const int block_off = num_elements_per_thread_block_decomposed * blockIdx.x;
+
+    __shared__ uint16_t qtable_shared[dct_block_size];
+    assert(blockDim.x >= dct_block_size);
+    if (threadIdx.x < dct_block_size) {
+        qtable_shared[threadIdx.x] = qtable[threadIdx.x];
+    }
+
+    __syncthreads();
+
+    const int row_idx        = threadIdx.x % dct_block_dim;
+    const int idct_block_idx = threadIdx.x / dct_block_dim;
+
+    // idct block offset
+    const int off_in_block = dct_block_size * idct_block_idx;
+
+    int16_t coeffs_local[8];
+    *reinterpret_cast<uint4*>(coeffs_local) =
+        reinterpret_cast<const uint4*>(coeffs + block_off + off_in_block)[row_idx];
+
+    float vals[8];
+    for (int i = 0; i < 8; ++i) {
+        vals[i] = coeffs_local[i] * static_cast<float>(qtable_shared[row_idx * 8 + i]);
+    }
+
+    idct_vector(vals);
+
+    transpose(vals);
+
+    idct_vector(vals);
+
+    transpose(vals);
+
+    uint8_t pixels_regs[8];
+    for (int i = 0; i < dct_block_dim; ++i) {
+        const float val = 128 + std::roundf(vals[i]);
+        pixels_regs[i]  = clampf(val, 0.f, 255.f);
+    }
+    reinterpret_cast<uint2*>(pixels + block_off + off_in_block)[row_idx] =
+        *reinterpret_cast<const uint2*>(pixels_regs);
+}
+
+} // namespace
+
+int get_num_idct_blocks_per_thread_block_no_shared()
+{
+    return num_idct_blocks_per_thread_block_no_shared;
+}
+
+bool idct_no_shared(
+    std::vector<gpu_buf<uint8_t>>& pixels,
+    const std::vector<gpu_buf<int16_t>>& coeffs,
+    const std::vector<gpu_buf<uint16_t>>& qtable,
+    const std::vector<int>& num_blocks,
+    cudaStream_t stream)
+{
+    assert(pixels.size() == coeffs.size());
+    assert(coeffs.size() == qtable.size());
+    assert(qtable.size() == num_blocks.size());
+    const int num_components = pixels.size();
+
+    for (int c = 0; c < num_components; ++c) {
+        const int num_blocks_c = num_blocks[c];
+
+        const int kernel_block_size = num_threads_per_thread_block_no_shared;
+        assert(num_blocks_c % num_idct_blocks_per_thread_block_no_shared == 0);
+        const int num_kernel_blocks = num_blocks_c / num_idct_blocks_per_thread_block_no_shared;
+
+        idct_no_shared_kernel<<<num_kernel_blocks, kernel_block_size, 0, stream>>>(
+            pixels[c].ptr, coeffs[c].ptr, qtable[c].ptr, num_blocks_c);
+        RETURN_IF_ERR_CUDA(cudaPeekAtLastError());
+    }
+
+    return true;
+}
+
+// TODO ideas:
+// - have one wavefront
+// - mix float and int ops
+// - qtable in constant memory

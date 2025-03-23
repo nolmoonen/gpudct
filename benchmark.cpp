@@ -50,7 +50,9 @@ bool benchmark(const char* filename)
             get_num_idct_blocks_per_thread_block_naive(),
             get_num_idct_blocks_per_thread_block_lut()),
         std::lcm(
-            get_num_idct_blocks_per_thread_block_seperable(),
+            std::lcm(
+                get_num_idct_blocks_per_thread_block_seperable(),
+                get_num_idct_blocks_per_thread_block_no_shared()),
             std::lcm(
                 get_num_idct_blocks_per_thread_block_decomposed(),
                 get_num_idct_blocks_per_thread_block_gpujpeg())));
@@ -127,6 +129,10 @@ bool benchmark(const char* filename)
     });
     measure("decomposed", [&]() {
         RETURN_IF_ERR(idct_decomposed(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
+        return true;
+    });
+    measure("no_shared", [&]() {
+        RETURN_IF_ERR(idct_no_shared(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
     measure("gpujpeg", [&]() {

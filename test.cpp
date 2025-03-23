@@ -114,7 +114,9 @@ bool test(const char* filename)
             get_num_idct_blocks_per_thread_block_naive(),
             get_num_idct_blocks_per_thread_block_lut()),
         std::lcm(
-            get_num_idct_blocks_per_thread_block_seperable(),
+            std::lcm(
+                get_num_idct_blocks_per_thread_block_seperable(),
+                get_num_idct_blocks_per_thread_block_no_shared()),
             std::lcm(
                 get_num_idct_blocks_per_thread_block_decomposed(),
                 get_num_idct_blocks_per_thread_block_gpujpeg())));
@@ -202,6 +204,17 @@ bool test(const char* filename)
     if (true) {
         RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
         const std::string filename_out(std::string(filename) + "_decomposed.ppm");
+        write_ppm(img, filename_out, h_pixels);
+    }
+
+    RETURN_IF_ERR(clear_pixels(d_pixels));
+
+    idct_no_shared(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
+    RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
+    print_result("no shared", vals);
+    if (true) {
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        const std::string filename_out(std::string(filename) + "_no_shared.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
 
