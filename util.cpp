@@ -81,30 +81,33 @@ bool load_coeffs(image& img, const char* filename)
     jvirt_barray_ptr* h_coeff = jpeg_read_coefficients(&cinfo);
 
     for (int c = 0; c < cinfo.num_components; ++c) {
-        const int by      = cinfo.comp_info->height_in_blocks;
-        const int bx      = cinfo.comp_info->width_in_blocks;
-        const int ssy     = cinfo.comp_info->v_samp_factor;
+        const int by      = cinfo.comp_info[c].height_in_blocks;
+        const int bx      = cinfo.comp_info[c].width_in_blocks;
+        const int ssy     = cinfo.comp_info[c].v_samp_factor;
         const size_t size = by * bx * 64;
 
         std::vector<int16_t> h_coeff_buffer(size);
 
         for (int y = 0; y < by; y += ssy) {
-            const size_t row_size   = bx * 64;
-            const size_t off        = y * row_size;
+            const size_t row_size = bx * 64;
+            const size_t off      = y * row_size;
+            const int num_rows    = std::min(by - y, ssy);
+            // access multiple rows at a time, see jctrans.c for reference
             int16_t(**h_coeffc)[64] = cinfo.mem->access_virt_barray(
-                reinterpret_cast<j_common_ptr>(&cinfo), h_coeff[c], y, ssy, false);
-            std::memcpy(h_coeff_buffer.data() + off, **h_coeffc, row_size * ssy * sizeof(int16_t));
+                reinterpret_cast<j_common_ptr>(&cinfo), h_coeff[c], y, num_rows, false);
+            std::memcpy(
+                h_coeff_buffer.data() + off, **h_coeffc, row_size * num_rows * sizeof(int16_t));
         }
 
         img.coeffs.push_back(std::move(h_coeff_buffer));
 
         std::vector<uint16_t> qtable(64);
-        if (cinfo.comp_info->quant_table == nullptr) {
+        if (cinfo.comp_info[c].quant_table == nullptr) {
             printf("no quantization table available\n");
             return false;
         }
 
-        std::memcpy(qtable.data(), cinfo.comp_info->quant_table, 64 * sizeof(uint16_t));
+        std::memcpy(qtable.data(), cinfo.comp_info[c].quant_table, 64 * sizeof(uint16_t));
         img.qtable.push_back(std::move(qtable));
 
         img.num_blocks_x.push_back(bx);
