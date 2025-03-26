@@ -28,3 +28,6 @@ steps in optimization are:
 
 todo
 - maybe do not use maximum psnr but normal psnr, as this version is very sensitive to minor changes. the problem is that the order of the multiplications of `qval`, `coeff`, and constants starts to matter.
+
+tried but didn;t work
+- qtable in constant memory

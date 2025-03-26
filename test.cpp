@@ -34,14 +34,17 @@
 namespace {
 
 bool pixels_dtoh(
-    std::vector<std::vector<uint8_t>>& h_pixels, const std::vector<gpu_buf<uint8_t>>& d_pixels)
+    std::vector<std::vector<uint8_t>>& h_pixels,
+    const std::vector<gpu_buf<uint8_t>>& d_pixels,
+    const std::vector<int>& num_blocks)
 {
     assert(h_pixels.size() == d_pixels.size());
+    assert(d_pixels.size() == num_blocks.size());
     const int num_components = h_pixels.size();
     for (int c = 0; c < num_components; ++c) {
-        // TODO d_pixels[c].n may be bigger. keep track of current size as well?
-        assert(h_pixels[c].size() <= static_cast<size_t>(d_pixels[c].num));
-        const int num_elements = h_pixels[c].size();
+        const int num_elements = dct_block_size * num_blocks[c];
+        assert(h_pixels[c].size() >= static_cast<size_t>(num_elements));
+        assert(d_pixels[c].num >= num_elements);
         RETURN_IF_ERR_CUDA(cudaMemcpy(
             h_pixels[c].data(),
             d_pixels[c].ptr,
@@ -53,14 +56,17 @@ bool pixels_dtoh(
 }
 
 bool pixels_htod(
-    std::vector<gpu_buf<uint8_t>>& d_pixels, const std::vector<std::vector<uint8_t>>& h_pixels)
+    std::vector<gpu_buf<uint8_t>>& d_pixels,
+    const std::vector<std::vector<uint8_t>>& h_pixels,
+    const std::vector<int>& num_blocks)
 {
     assert(d_pixels.size() == h_pixels.size());
+    assert(h_pixels.size() == num_blocks.size());
     const int num_components = d_pixels.size();
     for (int c = 0; c < num_components; ++c) {
-        // TODO d_pixels[c].n may be bigger. keep track of current size as well?
-        assert(static_cast<size_t>(d_pixels[c].num) >= h_pixels[c].size());
-        const int num_elements = d_pixels[c].num;
+        const int num_elements = dct_block_size * num_blocks[c];
+        assert(d_pixels[c].num >= num_elements);
+        assert(h_pixels[c].size() >= static_cast<size_t>(num_elements));
         RETURN_IF_ERR_CUDA(cudaMemcpy(
             d_pixels[c].ptr,
             h_pixels[c].data(),
@@ -111,8 +117,12 @@ bool test(const char* filename)
 
     const int num_blocks_lcm = std::lcm(
         std::lcm(
-            get_num_idct_blocks_per_thread_block_naive(),
-            get_num_idct_blocks_per_thread_block_lut()),
+            std::lcm(
+                get_num_idct_blocks_per_thread_block_next16(),
+                get_num_idct_blocks_per_thread_block_naive()),
+            std::lcm(
+                get_num_idct_blocks_per_thread_block_lut(),
+                get_num_idct_blocks_per_thread_block_next())),
         std::lcm(
             std::lcm(
                 get_num_idct_blocks_per_thread_block_seperable(),
@@ -160,7 +170,7 @@ bool test(const char* filename)
         const std::string filename_out(std::string(filename) + "_cpu.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
-    RETURN_IF_ERR(pixels_htod(d_pixels_gold, h_pixels));
+    RETURN_IF_ERR(pixels_htod(d_pixels_gold, h_pixels, img.num_blocks));
 
     cudaStream_t stream = nullptr;
 
@@ -169,7 +179,7 @@ bool test(const char* filename)
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("naive", vals);
     if (true) {
-        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
         const std::string filename_out(std::string(filename) + "_naive.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
@@ -180,7 +190,7 @@ bool test(const char* filename)
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("lut", vals);
     if (true) {
-        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
         const std::string filename_out(std::string(filename) + "_lut.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
@@ -191,7 +201,7 @@ bool test(const char* filename)
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("seperable", vals);
     if (true) {
-        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
         const std::string filename_out(std::string(filename) + "_seperable.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
@@ -202,7 +212,7 @@ bool test(const char* filename)
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("decomposed", vals);
     if (true) {
-        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
         const std::string filename_out(std::string(filename) + "_decomposed.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
@@ -213,8 +223,30 @@ bool test(const char* filename)
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("no shared", vals);
     if (true) {
-        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
         const std::string filename_out(std::string(filename) + "_no_shared.ppm");
+        write_ppm(img, filename_out, h_pixels);
+    }
+
+    RETURN_IF_ERR(clear_pixels(d_pixels));
+
+    idct_next(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
+    RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
+    print_result("next", vals);
+    if (true) {
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
+        const std::string filename_out(std::string(filename) + "_next.ppm");
+        write_ppm(img, filename_out, h_pixels);
+    }
+
+    RETURN_IF_ERR(clear_pixels(d_pixels));
+
+    idct_next16(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream);
+    RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
+    print_result("next16", vals);
+    if (true) {
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
+        const std::string filename_out(std::string(filename) + "_next16.ppm");
         write_ppm(img, filename_out, h_pixels);
     }
 
@@ -224,7 +256,7 @@ bool test(const char* filename)
     RETURN_IF_ERR(psnr(vals, d_pixels_gold, d_pixels, img.num_blocks));
     print_result("gpujpeg", vals);
     if (true) {
-        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels));
+        RETURN_IF_ERR(pixels_dtoh(h_pixels, d_pixels, img.num_blocks));
         const std::string filename_out(std::string(filename) + "_gpujpeg.ppm");
         write_ppm(img, filename_out, h_pixels);
     }

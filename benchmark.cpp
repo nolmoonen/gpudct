@@ -47,8 +47,12 @@ bool benchmark(const char* filename)
 
     const int num_blocks_lcm = std::lcm(
         std::lcm(
-            get_num_idct_blocks_per_thread_block_naive(),
-            get_num_idct_blocks_per_thread_block_lut()),
+            std::lcm(
+                get_num_idct_blocks_per_thread_block_next16(),
+                get_num_idct_blocks_per_thread_block_naive()),
+            std::lcm(
+                get_num_idct_blocks_per_thread_block_lut(),
+                get_num_idct_blocks_per_thread_block_next())),
         std::lcm(
             std::lcm(
                 get_num_idct_blocks_per_thread_block_seperable(),
@@ -133,6 +137,14 @@ bool benchmark(const char* filename)
     });
     measure("no_shared", [&]() {
         RETURN_IF_ERR(idct_no_shared(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
+        return true;
+    });
+    measure("next", [&]() {
+        RETURN_IF_ERR(idct_next(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
+        return true;
+    });
+    measure("next16", [&]() {
+        RETURN_IF_ERR(idct_next16(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));
         return true;
     });
     measure("gpujpeg", [&]() {

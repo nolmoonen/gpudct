@@ -84,4 +84,24 @@ bool idct_no_shared(
     const std::vector<int>& num_blocks,
     cudaStream_t stream);
 
+// needed for rounding up the allocation
+int get_num_idct_blocks_per_thread_block_next();
+
+bool idct_next(
+    std::vector<gpu_buf<uint8_t>>& pixels,
+    const std::vector<gpu_buf<int16_t>>& coeffs,
+    const std::vector<gpu_buf<uint16_t>>& qtable,
+    const std::vector<int>& num_blocks,
+    cudaStream_t stream);
+
+// needed for rounding up the allocation
+int get_num_idct_blocks_per_thread_block_next16();
+
+bool idct_next16(
+    std::vector<gpu_buf<uint8_t>>& pixels,
+    const std::vector<gpu_buf<int16_t>>& coeffs,
+    const std::vector<gpu_buf<uint16_t>>& qtable,
+    const std::vector<int>& num_blocks,
+    cudaStream_t stream);
+
 #endif // GPUDCT_DCT_HPP_
