@@ -28,7 +28,13 @@ steps in optimization are:
 
 todo
 - maybe do not use maximum psnr but normal psnr, as this version is very sensitive to minor changes. the problem is that the order of the multiplications of `qval`, `coeff`, and constants starts to matter.
+- report [min, max] in addition to average
+- remove setting gpu clocks if it does not prove to be useful. (reset gpu clocks when done. use destructor)
+- cuda add quantization kernel and special testing and benchmarking functions
+- restore cuda kernel and try to do some verification using the u16 output. it does not make sense to modify the kernel so much. not that it does not do quantization
 
 tried but didn;t work
 - qtable in constant memory
 - not doing final transpose but writing uncoalesced u8 or u16
+
+cuda-samples not included because order of data is different, no quantization happens (also causing output to be written as u8)

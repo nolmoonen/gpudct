@@ -64,7 +64,7 @@ void idct_block(uint8_t* pixels, const int16_t* coeffs, const uint16_t* qtable, 
 } // namespace
 
 void idct_cpu(
-    std::vector<std::vector<uint8_t>>& pixels,
+    std::vector<cpu_buf<uint8_t>>& pixels,
     const std::vector<std::vector<int16_t>>& coeffs,
     const std::vector<std::vector<uint16_t>>& qtable,
     const std::vector<int>& num_blocks)
@@ -78,8 +78,7 @@ void idct_cpu(
         const int num_blocks_c = num_blocks[c];
         for (int i = 0; i < num_blocks_c; ++i) {
             const int off = dct_block_size * i;
-            idct_block(
-                pixels[c].data() + off, coeffs[c].data() + off, qtable[c].data(), num_blocks_c);
+            idct_block(pixels[c].ptr + off, coeffs[c].data() + off, qtable[c].data(), num_blocks_c);
         }
     }
 }
@@ -1106,11 +1105,15 @@ bool idct_next16(
 
 // TODO ideas:
 // - consider half precision
-// - transpose u8 (by doing something smarter than just templating the function)
 // - mix float and int ops
 // - store qtable as u8 if it fits
 // - create syntethic benchmark
 // - lock gpu clocks for benchmarking
+// - persist l2 for qtable?
 
 // https://www.sciencedirect.com/science/article/abs/pii/S0743731522000223
 // https://dl.acm.org/doi/pdf/10.5555/1553673.1608881
+
+// TODO
+// - finish throughput printing (also do write and explain why smaller)
+// - add cuda kernels (split into idct and quantization)

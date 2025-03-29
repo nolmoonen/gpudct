@@ -49,4 +49,4 @@ add_executable(gpudct_test test.cpp psnr.cu)
 target_link_libraries(gpudct_test PRIVATE gpudct CUDA::cudart_static)
 
 add_executable(gpudct_benchmark benchmark.cpp)
-target_link_libraries(gpudct_benchmark PRIVATE gpudct CUDA::cudart_static)
+target_link_libraries(gpudct_benchmark PRIVATE gpudct CUDA::cudart_static CUDA::curand_static CUDA::nvml)

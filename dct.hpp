@@ -29,7 +29,7 @@
 #include <vector>
 
 void idct_cpu(
-    std::vector<std::vector<uint8_t>>& pixels,
+    std::vector<cpu_buf<uint8_t>>& pixels,
     const std::vector<std::vector<int16_t>>& coeffs,
     const std::vector<std::vector<uint16_t>>& qtable,
     const std::vector<int>& num_blocks);

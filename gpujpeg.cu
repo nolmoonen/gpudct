@@ -393,7 +393,7 @@ __global__ void gpujpeg_idct_gpu_kernel(
     //output pointer (the begin for this thread block)
     unsigned int firstByteOfActualBlock = x8 + z64 + picBlockNumber;
 
-    // NOTE(nol) specificied constant stride
+    // NOTE(nol) specify compile-time constant stride
     constexpr unsigned int output_stride = dct_block_dim;
 
     //output pointer for this thread + output row shift; each thread writes 1 row of an
@@ -466,18 +466,15 @@ __global__ void gpujpeg_idct_gpu_kernel(
     *((uint64_t*)resultPtr) = tempResult;
 }
 
-constexpr int num_elements_per_thread_block_gpujpeg =
-    8 * GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z;
-static_assert(num_elements_per_thread_block_gpujpeg % dct_block_size == 0);
-constexpr int num_idct_blocks_per_thread_block_gpujpeg =
-    num_elements_per_thread_block_gpujpeg / dct_block_size;
+constexpr int num_elements_per_thread = dct_block_dim;
+constexpr int num_elements_per_thread_block =
+    num_elements_per_thread * GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z;
+static_assert(num_elements_per_thread_block % dct_block_size == 0);
+constexpr int num_idct_blocks_per_thread_block = num_elements_per_thread_block / dct_block_size;
 
 } // namespace
 
-int get_num_idct_blocks_per_thread_block_gpujpeg()
-{
-    return num_idct_blocks_per_thread_block_gpujpeg;
-}
+int get_num_idct_blocks_per_thread_block_gpujpeg() { return num_idct_blocks_per_thread_block; }
 
 bool idct_gpujpeg(
     std::vector<gpu_buf<uint8_t>>& pixels,
@@ -494,8 +491,8 @@ bool idct_gpujpeg(
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = num_blocks[c];
 
-        assert(num_blocks_c % num_idct_blocks_per_thread_block_gpujpeg == 0);
-        const dim3 num_kernel_blocks = num_blocks_c / num_idct_blocks_per_thread_block_gpujpeg;
+        assert(num_blocks_c % num_idct_blocks_per_thread_block == 0);
+        const dim3 num_kernel_blocks = num_blocks_c / num_idct_blocks_per_thread_block;
         const dim3 kernel_block_size =
             dim3(GPUJPEG_IDCT_BLOCK_X, GPUJPEG_IDCT_BLOCK_Y, GPUJPEG_IDCT_BLOCK_Z);
 

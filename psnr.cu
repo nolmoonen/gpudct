@@ -91,7 +91,7 @@ bool psnr(
     gpu_buf<char> d_tmp;
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = num_blocks[c];
-        RETURN_IF_ERR_CUDA(d_max_squared_diff_per_block.resize(num_blocks_c));
+        RETURN_IF_ERR(d_max_squared_diff_per_block.resize(num_blocks_c));
 
         const int num_elements_per_kernel_block = thread_block_size * elements_per_thread;
         const int num_kernel_blocks =
@@ -102,7 +102,7 @@ bool psnr(
             d_max_squared_diff_per_block.ptr, pixels_a[c].ptr, pixels_b[c].ptr, num_blocks_c);
         RETURN_IF_ERR_CUDA(cudaPeekAtLastError());
 
-        RETURN_IF_ERR_CUDA(d_max_squared_diff.resize(1));
+        RETURN_IF_ERR(d_max_squared_diff.resize(1));
 
         size_t num_tmp = 0;
         RETURN_IF_ERR_CUDA(cub::DeviceReduce::Max(
@@ -111,7 +111,7 @@ bool psnr(
             d_max_squared_diff_per_block.ptr,
             d_max_squared_diff.ptr,
             num_blocks_c));
-        RETURN_IF_ERR_CUDA(d_tmp.resize(num_tmp));
+        RETURN_IF_ERR(d_tmp.resize(num_tmp));
         RETURN_IF_ERR_CUDA(cub::DeviceReduce::Max(
             d_tmp.ptr,
             num_tmp,

@@ -34,19 +34,18 @@
 namespace {
 
 bool pixels_dtoh(
-    std::vector<std::vector<uint8_t>>& h_pixels,
-    const std::vector<gpu_buf<uint8_t>>& d_pixels,
+    std::vector<cpu_buf<uint8_t>>& h_pixels, const std::vector<gpu_buf<uint8_t>>& d_pixels,
     const std::vector<int>& num_blocks)
 {
     assert(h_pixels.size() == d_pixels.size());
     assert(d_pixels.size() == num_blocks.size());
     const int num_components = h_pixels.size();
     for (int c = 0; c < num_components; ++c) {
-        const int num_elements = dct_block_size * num_blocks[c];
-        assert(h_pixels[c].size() >= static_cast<size_t>(num_elements));
+        const size_t num_elements = dct_block_size * num_blocks[c];
+        assert(h_pixels[c].num >= num_elements);
         assert(d_pixels[c].num >= num_elements);
         RETURN_IF_ERR_CUDA(cudaMemcpy(
-            h_pixels[c].data(),
+            h_pixels[c].ptr,
             d_pixels[c].ptr,
             num_elements * sizeof(uint8_t),
             cudaMemcpyDeviceToHost));
@@ -56,20 +55,19 @@ bool pixels_dtoh(
 }
 
 bool pixels_htod(
-    std::vector<gpu_buf<uint8_t>>& d_pixels,
-    const std::vector<std::vector<uint8_t>>& h_pixels,
+    std::vector<gpu_buf<uint8_t>>& d_pixels, const std::vector<cpu_buf<uint8_t>>& h_pixels,
     const std::vector<int>& num_blocks)
 {
     assert(d_pixels.size() == h_pixels.size());
     assert(h_pixels.size() == num_blocks.size());
     const int num_components = d_pixels.size();
     for (int c = 0; c < num_components; ++c) {
-        const int num_elements = dct_block_size * num_blocks[c];
+        const size_t num_elements = dct_block_size * num_blocks[c];
         assert(d_pixels[c].num >= num_elements);
-        assert(h_pixels[c].size() >= static_cast<size_t>(num_elements));
+        assert(h_pixels[c].num >= num_elements);
         RETURN_IF_ERR_CUDA(cudaMemcpy(
             d_pixels[c].ptr,
-            h_pixels[c].data(),
+            h_pixels[c].ptr,
             num_elements * sizeof(uint8_t),
             cudaMemcpyHostToDevice));
     }
@@ -110,7 +108,7 @@ bool test(const char* filename)
     std::vector<gpu_buf<uint8_t>> d_pixels_gold(num_components);
     std::vector<gpu_buf<uint8_t>> d_pixels(num_components);
 
-    std::vector<std::vector<uint8_t>> h_pixels(num_components);
+    std::vector<cpu_buf<uint8_t>> h_pixels(num_components);
     std::vector<gpu_buf<int16_t>> d_coeffs(num_components);
     std::vector<gpu_buf<uint16_t>> d_qtables(num_components);
     std::vector<float> vals(num_components);
@@ -130,6 +128,7 @@ bool test(const char* filename)
             std::lcm(
                 get_num_idct_blocks_per_thread_block_decomposed(),
                 get_num_idct_blocks_per_thread_block_gpujpeg())));
+    assert(num_blocks_lcm <= 64); // assume some reasonable rounding factor
 
     for (int c = 0; c < num_components; ++c) {
         const int num_blocks_c = img.num_blocks[c];
@@ -141,9 +140,9 @@ bool test(const char* filename)
         assert(num_elements == img.coeffs[c].size());
         const size_t num_elements_aligned = dct_block_size * num_blocks_c_aligned;
 
-        h_pixels[c].resize(num_elements_aligned);
-        RETURN_IF_ERR_CUDA(d_pixels[c].resize(num_elements_aligned));
-        RETURN_IF_ERR_CUDA(d_coeffs[c].resize(num_elements_aligned));
+        RETURN_IF_ERR(h_pixels[c].resize(num_elements_aligned));
+        RETURN_IF_ERR(d_pixels[c].resize(num_elements_aligned));
+        RETURN_IF_ERR(d_coeffs[c].resize(num_elements_aligned));
         RETURN_IF_ERR_CUDA(cudaMemcpy(
             d_coeffs[c].ptr,
             img.coeffs[c].data(),
@@ -153,10 +152,10 @@ bool test(const char* filename)
             d_coeffs[c].ptr + num_elements,
             0,
             (num_elements_aligned - num_elements) * sizeof(int16_t)));
-        RETURN_IF_ERR_CUDA(d_pixels_gold[c].resize(num_elements));
+        RETURN_IF_ERR(d_pixels_gold[c].resize(num_elements));
 
         assert(img.qtable[c].size() == dct_block_size);
-        RETURN_IF_ERR_CUDA(d_qtables[c].resize(dct_block_size));
+        RETURN_IF_ERR(d_qtables[c].resize(dct_block_size));
         RETURN_IF_ERR_CUDA(cudaMemcpy(
             d_qtables[c].ptr,
             img.qtable[c].data(),

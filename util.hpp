@@ -22,6 +22,8 @@
 #define GPUDCT_UTIL_HPP_
 
 #include <cuda_runtime.h>
+#include <curand.h>
+#include <nvml.h>
 
 #include <algorithm>
 #include <array>
@@ -47,14 +49,40 @@
         }                                                                      \
     } while (false)
 
-#define RETURN_IF_ERR_CUDA(call)                                                                   \
-    do {                                                                                           \
-        const cudaError_t _err = call;                                                             \
-        if (_err != cudaSuccess) {                                                                 \
-            printf(                                                                                \
-                "%s returned %s at " __FILE__ ":%d\n", #call, cudaGetErrorString(_err), __LINE__); \
-            return false;                                                                          \
-        }                                                                                          \
+#define RETURN_IF_ERR_CUDA(call)                           \
+    do {                                                   \
+        const cudaError_t _err = call;                     \
+        if (_err != cudaSuccess) {                         \
+            printf(                                        \
+                "%s returned \"%s\" at " __FILE__ ":%d\n", \
+                #call,                                     \
+                cudaGetErrorString(_err),                  \
+                __LINE__);                                 \
+            return false;                                  \
+        }                                                  \
+    } while (false)
+
+#define RETURN_IF_ERR_CURAND(call)                                                               \
+    do {                                                                                         \
+        const curandStatus_t _err = call;                                                        \
+        if (_err != CURAND_STATUS_SUCCESS) {                                                     \
+            printf(                                                                              \
+                "%s returned %d at " __FILE__ ":%d\n", #call, static_cast<int>(_err), __LINE__); \
+            return false;                                                                        \
+        }                                                                                        \
+    } while (false)
+
+#define RETURN_IF_ERR_NVML(call)                           \
+    do {                                                   \
+        const nvmlReturn_t _ret = call;                    \
+        if (_ret != NVML_SUCCESS) {                        \
+            printf(                                        \
+                "%s returned \"%s\" at " __FILE__ ":%d\n", \
+                #call,                                     \
+                nvmlErrorString(_ret),                     \
+                __LINE__);                                 \
+            return false;                                  \
+        }                                                  \
     } while (false)
 
 constexpr int dct_block_size = 64;
@@ -62,44 +90,97 @@ constexpr int dct_block_dim  = 8;
 
 // growing buffer, freed by destructor
 template <typename T>
-struct gpu_buf {
-    gpu_buf() : ptr(nullptr), num(0) {}
+struct vector {
+    vector() noexcept : ptr(nullptr), num(0) {}
 
-    gpu_buf(const gpu_buf&)            = delete;
-    gpu_buf(gpu_buf&&)                 = delete;
-    gpu_buf& operator=(const gpu_buf&) = delete;
-    gpu_buf& operator=(gpu_buf&&)      = delete;
+    // https://stackoverflow.com/questions/8001823/how-to-enforce-move-semantics-when-a-vector-grows
+    vector(const vector&)                = delete;
+    vector(vector&&) noexcept            = default;
+    vector& operator=(const vector&)     = delete;
+    vector& operator=(vector&&) noexcept = default;
 
-    ~gpu_buf()
-    {
-        if (ptr != nullptr) {
-            cudaFree(ptr);
-            ptr = nullptr;
-            num = 0;
-        }
-    }
-
-    [[nodiscard]] cudaError_t resize(int num_elements)
-    {
-        if (num_elements <= num) {
-            return cudaSuccess;
-        }
-
-        if (ptr != nullptr) {
-            cudaFree(ptr);
-            ptr = nullptr;
-            num = 0;
-        }
-
-        cudaError_t ret = cudaMalloc(&ptr, num_elements * sizeof(T));
-        if (ret == cudaSuccess) {
-            num = num_elements;
-        }
-        return ret;
-    }
+    [[nodiscard]] virtual bool resize(size_t num_elements) noexcept = 0;
 
     T* ptr;
-    int num;
+    size_t num;
+};
+
+template <typename T>
+struct gpu_buf : vector<T> {
+    gpu_buf() noexcept : vector<T>() {}
+
+    gpu_buf(const gpu_buf&)                = delete;
+    gpu_buf(gpu_buf&&) noexcept            = default;
+    gpu_buf& operator=(const gpu_buf&)     = delete;
+    gpu_buf& operator=(gpu_buf&&) noexcept = default;
+
+    ~gpu_buf() noexcept
+    {
+        if (this->ptr != nullptr) {
+            cudaFree(this->ptr);
+            this->ptr = nullptr;
+            this->num = 0;
+        }
+    }
+
+    [[nodiscard]] bool resize(size_t num_elements) noexcept
+    {
+        if (num_elements <= this->num) {
+            return true;
+        }
+
+        if (this->ptr != nullptr) {
+            RETURN_IF_ERR_CUDA(cudaFree(this->ptr));
+            this->ptr = nullptr;
+            this->num = 0;
+        }
+
+        RETURN_IF_ERR_CUDA(cudaMalloc(&(this->ptr), num_elements * sizeof(T)));
+        this->num = num_elements;
+
+        return true;
+    }
+};
+
+template <typename T>
+struct cpu_buf : vector<T> {
+    cpu_buf() noexcept : vector<T>() {}
+
+    cpu_buf(const cpu_buf&)                = delete;
+    cpu_buf(cpu_buf&&) noexcept            = default;
+    cpu_buf& operator=(const cpu_buf&)     = delete;
+    cpu_buf& operator=(cpu_buf&&) noexcept = default;
+
+    ~cpu_buf() noexcept
+    {
+        if (this->ptr != nullptr) {
+            std::free(this->ptr);
+            this->ptr = nullptr;
+            this->num = 0;
+        }
+    }
+
+    [[nodiscard]] bool resize(size_t num_elements) noexcept
+    {
+        if (num_elements <= this->num) {
+            return true;
+        }
+
+        if (this->ptr != nullptr) {
+            std::free(this->ptr);
+            this->ptr = nullptr;
+            this->num = 0;
+        }
+
+        T* pointer = static_cast<T*>(std::malloc(num_elements * sizeof(T)));
+        if (pointer == nullptr) {
+            return false;
+        }
+        this->ptr = pointer;
+        this->num = num_elements;
+
+        return true;
+    }
 };
 
 template <
@@ -122,7 +203,7 @@ struct image {
 bool load_coeffs(image& img, const char* filename);
 
 inline void write_ppm(
-    const image& img, const std::string& filename, const std::vector<std::vector<uint8_t>>& pixels)
+    const image& img, const std::string& filename, const std::vector<cpu_buf<uint8_t>>& pixels)
 {
     assert(img.coeffs.size() == img.qtable.size());
     assert(img.qtable.size() == img.num_blocks_x.size());
@@ -155,9 +236,9 @@ inline void write_ppm(
 
             const size_t i = dct_block_size * (num_blocks_x * by + bx) + 8 * yy + xx;
 
-            const uint8_t cy = pixels[0][i];
-            const uint8_t cb = pixels[1][i];
-            const uint8_t cr = pixels[2][i];
+            const uint8_t cy = pixels[0].ptr[i];
+            const uint8_t cb = pixels[1].ptr[i];
+            const uint8_t cr = pixels[2].ptr[i];
 
             auto cvt = [](float a) { return std::clamp(std::roundf(a), 0.f, 255.f); };
 
