@@ -31,3 +31,4 @@ todo
 
 tried but didn;t work
 - qtable in constant memory
+- not doing final transpose but writing uncoalesced u8 or u16

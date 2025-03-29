@@ -520,12 +520,13 @@ constexpr int num_threads_per_thread_block_no_shared =
 constexpr int num_elements_per_thread_block_no_shared =
     num_threads_per_thread_block_no_shared * num_elements_per_thread_no_shared;
 
-#define SWAPF(a, b)      \
-    {                    \
-        float tmp = a;   \
-        a         = b;   \
-        b         = tmp; \
-    }
+template <typename T>
+__device__ void swap(T& a, T& b)
+{
+    T tmp = std::move(a);
+    a     = std::move(b);
+    b     = std::move(tmp);
+}
 
 __device__ void transpose(float vals[dct_block_dim])
 {
@@ -553,10 +554,10 @@ __device__ void transpose(float vals[dct_block_dim])
     // moving single elements in 2x2 blocks
     // step 1:
     if (!(threadIdx.x & 1)) {
-        SWAPF(u0, u1);
-        SWAPF(u2, u3);
-        SWAPF(u4, u5);
-        SWAPF(u6, u7);
+        swap(u0, u1);
+        swap(u2, u3);
+        swap(u4, u5);
+        swap(u6, u7);
     }
 
     // 01 00 03 02 05 04 07 06 -
@@ -586,10 +587,10 @@ __device__ void transpose(float vals[dct_block_dim])
 
     // step 3:
     if (!(threadIdx.x & 1)) {
-        SWAPF(u0, u1);
-        SWAPF(u2, u3);
-        SWAPF(u4, u5);
-        SWAPF(u6, u7);
+        swap(u0, u1);
+        swap(u2, u3);
+        swap(u4, u5);
+        swap(u6, u7);
     }
 
     // 00 10 02 12 04 14 06 16 -
@@ -605,10 +606,10 @@ __device__ void transpose(float vals[dct_block_dim])
     // moving 2x2 elements in 4x4 blocks
     // step 1:
     if (!(threadIdx.x & 2)) {
-        SWAPF(u0, u2);
-        SWAPF(u1, u3);
-        SWAPF(u4, u6);
-        SWAPF(u5, u7);
+        swap(u0, u2);
+        swap(u1, u3);
+        swap(u4, u6);
+        swap(u5, u7);
     }
     // step 2:
     u0 = __shfl_xor_sync(0x000000ff, u0, 2);
@@ -617,20 +618,20 @@ __device__ void transpose(float vals[dct_block_dim])
     u5 = __shfl_xor_sync(0x000000ff, u5, 2);
     // step 3:
     if (!(threadIdx.x & 2)) {
-        SWAPF(u0, u2);
-        SWAPF(u1, u3);
-        SWAPF(u4, u6);
-        SWAPF(u5, u7);
+        swap(u0, u2);
+        swap(u1, u3);
+        swap(u4, u6);
+        swap(u5, u7);
     }
 
     // perform 8x8 movement
     // moving 4x4 elements in 8x8 blocks
     // step 1:
     if (!(threadIdx.x & 4)) {
-        SWAPF(u0, u4);
-        SWAPF(u1, u5);
-        SWAPF(u2, u6);
-        SWAPF(u3, u7);
+        swap(u0, u4);
+        swap(u1, u5);
+        swap(u2, u6);
+        swap(u3, u7);
     }
     // step 2:
     u0 = __shfl_xor_sync(0x000000ff, u0, 4);
@@ -639,10 +640,10 @@ __device__ void transpose(float vals[dct_block_dim])
     u3 = __shfl_xor_sync(0x000000ff, u3, 4);
     // step 3:
     if (!(threadIdx.x & 4)) {
-        SWAPF(u0, u4);
-        SWAPF(u1, u5);
-        SWAPF(u2, u6);
-        SWAPF(u3, u7);
+        swap(u0, u4);
+        swap(u1, u5);
+        swap(u2, u6);
+        swap(u3, u7);
     }
 
     vals[0] = u0;
@@ -885,23 +886,23 @@ __device__ void transpose16(float vals[2 * dct_block_dim])
 
     // perform 2x2 movement
     // moving single elements in 2x2 blocks
-    SWAPF(u1, u8);
-    SWAPF(u3, ua);
-    SWAPF(u5, uc);
-    SWAPF(u7, ue);
+    swap(u1, u8);
+    swap(u3, ua);
+    swap(u5, uc);
+    swap(u7, ue);
 
     // perform 4x4 movement
     // moving 2x2 elements in 4x4 blocks
     // step 1:
     if (!(threadIdx.x & 1)) {
-        SWAPF(u0, u2);
-        SWAPF(u1, u3);
-        SWAPF(u4, u6);
-        SWAPF(u5, u7);
-        SWAPF(u8, ua);
-        SWAPF(u9, ub);
-        SWAPF(uc, ue);
-        SWAPF(ud, uf);
+        swap(u0, u2);
+        swap(u1, u3);
+        swap(u4, u6);
+        swap(u5, u7);
+        swap(u8, ua);
+        swap(u9, ub);
+        swap(uc, ue);
+        swap(ud, uf);
     }
     // step 2:
     u0 = __shfl_xor_sync(0x000000ff, u0, 1);
@@ -914,27 +915,27 @@ __device__ void transpose16(float vals[2 * dct_block_dim])
     ud = __shfl_xor_sync(0x000000ff, ud, 1);
     // step 3:
     if (!(threadIdx.x & 1)) {
-        SWAPF(u0, u2);
-        SWAPF(u1, u3);
-        SWAPF(u4, u6);
-        SWAPF(u5, u7);
-        SWAPF(u8, ua);
-        SWAPF(u9, ub);
-        SWAPF(uc, ue);
-        SWAPF(ud, uf);
+        swap(u0, u2);
+        swap(u1, u3);
+        swap(u4, u6);
+        swap(u5, u7);
+        swap(u8, ua);
+        swap(u9, ub);
+        swap(uc, ue);
+        swap(ud, uf);
     }
     // perform 8x8 movement
     // moving 4x4 elements in 8x8 blocks
     // step 1:
     if (!(threadIdx.x & 2)) {
-        SWAPF(u0, u4);
-        SWAPF(u1, u5);
-        SWAPF(u2, u6);
-        SWAPF(u3, u7);
-        SWAPF(u8, uc);
-        SWAPF(u9, ud);
-        SWAPF(ua, ue);
-        SWAPF(ub, uf);
+        swap(u0, u4);
+        swap(u1, u5);
+        swap(u2, u6);
+        swap(u3, u7);
+        swap(u8, uc);
+        swap(u9, ud);
+        swap(ua, ue);
+        swap(ub, uf);
     }
     // step 2:
     u0 = __shfl_xor_sync(0x000000ff, u0, 2);
@@ -947,14 +948,14 @@ __device__ void transpose16(float vals[2 * dct_block_dim])
     ub = __shfl_xor_sync(0x000000ff, ub, 2);
     // step 3:
     if (!(threadIdx.x & 2)) {
-        SWAPF(u0, u4);
-        SWAPF(u1, u5);
-        SWAPF(u2, u6);
-        SWAPF(u3, u7);
-        SWAPF(u8, uc);
-        SWAPF(u9, ud);
-        SWAPF(ua, ue);
-        SWAPF(ub, uf);
+        swap(u0, u4);
+        swap(u1, u5);
+        swap(u2, u6);
+        swap(u3, u7);
+        swap(u8, uc);
+        swap(u9, ud);
+        swap(ua, ue);
+        swap(ub, uf);
     }
 
     vals[0x0] = u0;
@@ -973,6 +974,56 @@ __device__ void transpose16(float vals[2 * dct_block_dim])
     vals[0xd] = ud;
     vals[0xe] = ue;
     vals[0xf] = uf;
+}
+
+__device__ void transpose16(uint8_t vals[2 * dct_block_dim])
+{
+    uint16_t* vals16 = reinterpret_cast<uint16_t*>(vals);
+    uint32_t* vals32 = reinterpret_cast<uint32_t*>(vals);
+
+    // perform 2x2 movement
+    // moving single elements in 2x2 blocks
+    swap(vals[0x1], vals[0x8]);
+    swap(vals[0x3], vals[0xa]);
+    swap(vals[0x5], vals[0xc]);
+    swap(vals[0x7], vals[0xe]);
+
+    // perform 4x4 movement
+    // moving 2x2 elements in 4x4 blocks
+    // step 1:
+    if (!(threadIdx.x & 1)) {
+        swap(vals16[0], vals16[1]);
+        swap(vals16[2], vals16[3]);
+        swap(vals16[4], vals16[5]);
+        swap(vals16[6], vals16[7]);
+    }
+    // step 2:
+    vals16[0x0] = __shfl_xor_sync(0x000000ff, vals16[0x0], 1);
+    vals16[0x2] = __shfl_xor_sync(0x000000ff, vals16[0x2], 1);
+    vals16[0x4] = __shfl_xor_sync(0x000000ff, vals16[0x4], 1);
+    vals16[0x6] = __shfl_xor_sync(0x000000ff, vals16[0x6], 1);
+    // step 3:
+    if (!(threadIdx.x & 1)) {
+        swap(vals16[0], vals16[1]);
+        swap(vals16[2], vals16[3]);
+        swap(vals16[4], vals16[5]);
+        swap(vals16[6], vals16[7]);
+    }
+    // perform 8x8 movement
+    // moving 4x4 elements in 8x8 blocks
+    // step 1:
+    if (!(threadIdx.x & 2)) {
+        swap(vals32[0], vals32[1]);
+        swap(vals32[2], vals32[3]);
+    }
+    // step 2:
+    vals32[0x0] = __shfl_xor_sync(0x000000ff, vals32[0x0], 2);
+    vals32[0x2] = __shfl_xor_sync(0x000000ff, vals32[0x2], 2);
+    // step 3:
+    if (!(threadIdx.x & 2)) {
+        swap(vals32[0], vals32[1]);
+        swap(vals32[2], vals32[3]);
+    }
 }
 
 __global__ void idct_next16_kernel(uint8_t* pixels, const int16_t* coeffs, const uint16_t* qtable)
@@ -1003,14 +1054,15 @@ __global__ void idct_next16_kernel(uint8_t* pixels, const int16_t* coeffs, const
     idct_vector_no_norm(vals);
     idct_vector_no_norm(vals + dct_block_dim);
 
-    transpose16(vals);
-
     uint8_t pixels_regs[2 * dct_block_dim];
     for (int i = 0; i < 2 * dct_block_dim; ++i) {
         constexpr float sung_t2 = 1.f / 8.f; // print(f'{math.pow(1/math.sqrt(8),2)}')
         const float val         = 128 + std::roundf(sung_t2 * vals[i]);
         pixels_regs[i]          = clampf(val, 0.f, 255.f);
     }
+
+    transpose16(pixels_regs);
+
     reinterpret_cast<uint4*>(pixels + block_off)[threadIdx.x] =
         *reinterpret_cast<const uint4*>(pixels_regs);
 }
