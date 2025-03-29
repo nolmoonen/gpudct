@@ -980,6 +980,7 @@ __device__ void transpose16(uint8_t vals[2 * dct_block_dim])
 {
     uint16_t* vals16 = reinterpret_cast<uint16_t*>(vals);
     uint32_t* vals32 = reinterpret_cast<uint32_t*>(vals);
+    uint64_t* vals64 = reinterpret_cast<uint64_t*>(vals);
 
     // perform 2x2 movement
     // moving single elements in 2x2 blocks
@@ -998,10 +999,11 @@ __device__ void transpose16(uint8_t vals[2 * dct_block_dim])
         swap(vals16[6], vals16[7]);
     }
     // step 2:
-    vals16[0x0] = __shfl_xor_sync(0x000000ff, vals16[0x0], 1);
-    vals16[0x2] = __shfl_xor_sync(0x000000ff, vals16[0x2], 1);
-    vals16[0x4] = __shfl_xor_sync(0x000000ff, vals16[0x4], 1);
-    vals16[0x6] = __shfl_xor_sync(0x000000ff, vals16[0x6], 1);
+    swap(vals16[0x1], vals16[0x4]);
+    swap(vals16[0x3], vals16[0x6]);
+    vals64[0x0] = __shfl_xor_sync(0x000000ff, vals64[0x0], 1);
+    swap(vals16[0x1], vals16[0x4]);
+    swap(vals16[0x3], vals16[0x6]);
     // step 3:
     if (!(threadIdx.x & 1)) {
         swap(vals16[0], vals16[1]);
@@ -1017,8 +1019,9 @@ __device__ void transpose16(uint8_t vals[2 * dct_block_dim])
         swap(vals32[2], vals32[3]);
     }
     // step 2:
-    vals32[0x0] = __shfl_xor_sync(0x000000ff, vals32[0x0], 2);
-    vals32[0x2] = __shfl_xor_sync(0x000000ff, vals32[0x2], 2);
+    swap(vals32[0x1], vals32[0x2]);
+    vals64[0x0] = __shfl_xor_sync(0x000000ff, vals64[0x0], 2);
+    swap(vals32[0x1], vals32[0x2]);
     // step 3:
     if (!(threadIdx.x & 2)) {
         swap(vals32[0], vals32[1]);
