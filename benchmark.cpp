@@ -92,6 +92,12 @@ bool benchmark(const char* filename)
     cudaEvent_t stop;
     RETURN_IF_ERR_CUDA(cudaEventCreate(&stop));
 
+    cudaEvent_t start_avg;
+    RETURN_IF_ERR_CUDA(cudaEventCreate(&start_avg));
+
+    cudaEvent_t stop_avg;
+    RETURN_IF_ERR_CUDA(cudaEventCreate(&stop_avg));
+
     std::vector<gpu_buf<uint8_t>> d_pixels;
     std::vector<gpu_buf<int16_t>> d_coeffs;
     std::vector<gpu_buf<uint16_t>> d_qtables;
@@ -229,11 +235,12 @@ bool benchmark(const char* filename)
     }
 
     auto measure = [&](const char* name, std::function<bool()> dispatch) -> bool {
-        float min  = std::numeric_limits<float>::max();
-        float max  = std::numeric_limits<float>::lowest();
-        double sum = 0.f;
+        float min = std::numeric_limits<float>::max();
+        float max = std::numeric_limits<float>::lowest();
 
+        RETURN_IF_ERR_CUDA(cudaEventRecord(start_avg, stream));
         for (int i = 0; i < num_iterations; ++i) {
+            RETURN_IF_ERR_CUDA(cudaMemsetAsync(d_pixels[0].ptr, 0, size_t{100} << 20, stream));
             RETURN_IF_ERR_CUDA(cudaEventRecord(start, stream));
             RETURN_IF_ERR(dispatch());
             RETURN_IF_ERR_CUDA(cudaEventRecord(stop, stream));
@@ -242,8 +249,11 @@ bool benchmark(const char* filename)
             RETURN_IF_ERR_CUDA(cudaEventElapsedTime(&ms, start, stop));
             min = std::min(min, ms);
             max = std::max(max, ms);
-            sum += ms;
         }
+        RETURN_IF_ERR_CUDA(cudaEventRecord(stop_avg, stream));
+        RETURN_IF_ERR_CUDA(cudaEventSynchronize(stop_avg));
+        float sum;
+        RETURN_IF_ERR_CUDA(cudaEventElapsedTime(&sum, start_avg, stop_avg));
 
         size_t num_read_bytes_iter = 0;
         for (size_t c = 0; c < d_coeffs.size(); ++c) {
@@ -254,7 +264,7 @@ bool benchmark(const char* filename)
         const double throughput_read_avg = num_read_bytes / (sum / 1000.) / gib;
         const double throughput_read_max = num_read_bytes_iter / (min / 1000.) / gib;
         const double throughput_read_min = num_read_bytes_iter / (max / 1000.) / gib;
-        const float ms_avg               = sum / num_iterations;
+        const double ms_avg              = sum / num_iterations;
 
         printf(
             "%12s: %6.2f [%6.2f, %6.2f] GiB/s %10.5f ms\n",
@@ -301,8 +311,10 @@ bool benchmark(const char* filename)
         return true;
     });
 
-    RETURN_IF_ERR_CUDA(cudaEventDestroy(start));
+    RETURN_IF_ERR_CUDA(cudaEventDestroy(stop_avg));
+    RETURN_IF_ERR_CUDA(cudaEventDestroy(start_avg));
     RETURN_IF_ERR_CUDA(cudaEventDestroy(stop));
+    RETURN_IF_ERR_CUDA(cudaEventDestroy(start));
 
     RETURN_IF_ERR_CUDA(cudaStreamDestroy(stream));
 

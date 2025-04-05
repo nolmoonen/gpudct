@@ -15,14 +15,14 @@ sudo ./gpudct_benchmark
 synthetic benchmark mode.. finished generating random coefficients
 memory read bandwidth: 208.646059 GiB/s 224.032000 GB/s
                  avg [    min,   max] GiB/s        avg ms
-       naive:   1.75 [  1.64,   1.79] GiB/s 1145.19397ms
-         lut:  10.37 [  9.92,  10.71] GiB/s  192.80055ms
-   seperable:  31.43 [ 30.43,  34.34] GiB/s   63.64261ms
-  decomposed: 124.17 [116.93, 134.20] GiB/s   16.10738ms
-   no_shared: 201.01 [170.69, 218.99] GiB/s    9.94954ms
-        next: 227.62 [198.09, 235.58] GiB/s    8.78655ms
-      next16: 233.34 [199.76, 242.09] GiB/s    8.57106ms
-     gpujpeg: 124.21 [107.87, 130.13] GiB/s   16.10172ms
+       naive:   1.76 [  1.60,   1.79] GiB/s 1138.98804 ms
+         lut:  10.39 [  9.50,  10.73] GiB/s  192.51953 ms
+   seperable:  33.15 [ 30.85,  34.79] GiB/s   60.32524 ms
+  decomposed: 125.49 [121.00, 138.31] GiB/s   15.93758 ms
+   no_shared: 197.96 [174.83, 217.59] GiB/s   10.10308 ms
+        next: 216.51 [183.07, 234.95] GiB/s    9.23755 ms
+      next16: 226.23 [192.95, 242.02] GiB/s    8.84045 ms
+     gpujpeg: 119.81 [112.23, 130.19] GiB/s   16.69348 ms
 ```
 
 The benchmark locks GPU clocks for consistent performance, if run with required permissions. The implementations are explained [below](#implementations).
