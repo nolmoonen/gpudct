@@ -1,10 +1,10 @@
 # GPUDCT
 
-The goal of this project is to implement inverse discrete cosine transform (IDCT) for JPEG decoding achieving the highest possible performance while staying within acceptable accuracy. Specific goals are:
+The goal of this project is to implement inverse discrete cosine transform (IDCT) for JPEG decoding, achieving the highest possible performance while staying within acceptable error margins. Specific goals are:
 
 - Target hardware is the NVIDIA RTX 2070, as I have this at my disposal.
 - Error is calculated as the peak signal-to-noise ratio (PSNR), following previous work<sup>[1](#references)</sup>. PSNR values of 50 or higher are deemed acceptable.
-- For use in JPEG decoding, the implementation should load 16-bit integer coefficient values and write 8-bit pixel values. Not only should the implementation perform IDCT, but also dequantization using 16-bit quantization values.
+- For use in JPEG decoding, the implementation should load 16-bits integer coefficient values and write 8-bits pixel values. The implementation should not only perform IDCT, but also dequantization using 16-bit quantization values.
 
 ## Benchmark
 
@@ -29,7 +29,7 @@ The benchmark locks GPU clocks for consistent performance, if run with required 
 
 Since the kernels load one 16-bits value (and quantization value) per pixel and store one 8-bits value per pixel, the kernel will be limited by read bandwidth, not write bandwidth. On the Turing architecture, the read and write bandwidth are equal and 209 GiB/s (224 GB/s). Since they can be performed simultaneously, the effective bandwidth is 418 GiB/s (448 GB/s). However, for the IDCT application the bottleneck is read bandwidth.
 
-The final non-reference implementation (`next16`) achieves performance at or above bandwidth, meaning likely not substantial further improvement can be obtained. Why bandwidth higher than theorethically possible is obtained is unclear. Perhaps there is some memory boost clock or the timing measurement by the dirver are inaccurate.
+The final non-reference implementation (`next16`) achieves performance at or above bandwidth, meaning likely no substantial improvement can further be obtained. Why bandwidth higher than theoretically possible is obtained is unclear, perhaps there is some memory clock boost.
 
 ## Test
 
@@ -47,7 +47,7 @@ A simple test is implemented that calculates the PSNR values of the image compon
      gpujpeg [ 66.906792, 63.323742, 60.480869]
 ```
 
-The PSNR values stay well within the acceptable value of 50. The implementations are explained [below](#implementations).
+The PSNR values on all implementations stay well within the acceptable value of 50 (for this particular image). The implementations are explained [below](#implementations).
 
 ## Implementations
 
@@ -56,12 +56,12 @@ The implementations are as follows:
 - `lut` uses a look-up table for the cosines.
 - `seperable` separates the computation and stores intermediate results in shared memory. Each thread still computes a single pixel value, but instead only sums 8 + 8 = 16 coefficients and factors.
 - `decomposed` employs the algorithm of Sung et al.<sup>[3](#references)</sup> that decomposes the IDCT algorithm into eight per-row equations and subsequently eight per-column equations. Inspired by the CUDA samples<sup>[1](#references)</sup>, eight threads process one block of 64 coefficients. Between computations, the coefficients is transposed in shared memory.
-- `no shared` transposes the coefficients using warp-level intinsics.
+- `no shared` transposes the coefficients using warp-level intrinsics instead of shared memory.
 - `next` makes micro-optimizations to the previous kernel.
-- `next16` assigns sixteen coefficients rather than eight coefficients to each thread, allowing to transpose the coefficients between computations with fewer warp-level intrinsics.
+- `next16` assigns sixteen coefficients rather than eight coefficients to each thread, allowing to transpose the coefficients between computations with fewer total instructions.
 - `gpujpeg` is a reference implementation from GPUJPEG<sup>[4](#references)</sup> with minor adjustments to process the data format.
 
-The kernels from the CUDA samples<sup>[1](#references)</sup> are not included because quantization is not done within the IDCT kernel, and those kernels expect the coefficients to be in raster order. As a result, too many modifications are required, causing them to no longer be useful performance references.
+While nice reference material, the kernels from the CUDA samples<sup>[1](#references)</sup> are not included in the benchmark and test comparisons. The reason is that quantization is not done within those IDCT kernels, and those kernels expect the coefficients to be in raster order. As a result, too many modifications would be required to include them, causing them to no longer be useful performance references.
 
 ## References
 
