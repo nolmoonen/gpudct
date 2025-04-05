@@ -125,23 +125,6 @@ union PackedInteger {
     int32_t hInt;
 };
 
-/**
-  * Converts fixed point value to short value
-  */
-__device__ inline int16_t unfixh(int x) { return (int16_t)((x + 0x8000) >> 16); }
-
-/**
-  * Converts fixed point value to short value
-  */
-__device__ inline int unfixo(int x) { return (x + 0x1000) >> 13; }
-
-/** Constant memory copy of transposed quantization table pre-divided with DCT output weights. */
-__constant__ float gpujpeg_dct_gpu_quantization_table_const[64];
-
-/** Quantization table */
-//TODO zmenit na float
-__constant__ uint16_t gpujpeg_idct_gpu_quantization_table[64];
-
 #if !GPUJPEG_IDCT_USE_ASM
 
 /**
