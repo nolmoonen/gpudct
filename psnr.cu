@@ -53,6 +53,12 @@ bool psnr(
     const std::vector<gpu_buf<uint8_t>>& pixels_b,
     const std::vector<int>& num_blocks)
 {
+    // originally, PSNR was calculated as the maximum PSNR value within any block,
+    //   as this is much less sensitive to numerical issues in aggregation and averaging.
+    //   furhtermore, the only source of error in the implementation is per DCT block.
+    //   however, this per-block maximum is too sensitive to small implementation changes
+    //   such as the multiplication order. for that reason, the average over all blocks is used.
+
     assert(vals.size() == pixels_a.size());
     assert(pixels_a.size() == pixels_b.size());
     assert(pixels_b.size() == num_blocks.size());

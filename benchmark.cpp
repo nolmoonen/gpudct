@@ -142,6 +142,7 @@ bool benchmark(const char* filename)
             gen, reinterpret_cast<uint32_t*>(d_coeffs[0].ptr), num_coeffs_aligned / 2));
         RETURN_IF_ERR_CURAND(curandDestroyGenerator(gen));
 
+        // set some non-zero qtable values as zero-only can affect performance
         std::vector<uint16_t> h_qtables(dct_block_size);
         std::iota(h_qtables.begin(), h_qtables.end(), 1);
 
@@ -256,7 +257,7 @@ bool benchmark(const char* filename)
         const float ms_avg               = sum / num_iterations;
 
         printf(
-            "%12s: %6.2f [%6.2f, %6.2f] GiB/s %10.5fms\n",
+            "%12s: %6.2f [%6.2f, %6.2f] GiB/s %10.5f ms\n",
             name,
             throughput_read_avg,
             throughput_read_min,
@@ -264,6 +265,8 @@ bool benchmark(const char* filename)
             ms_avg);
         return true;
     };
+
+    printf("                 avg [    min,   max] GiB/s        avg ms\n");
 
     measure("naive", [&]() {
         RETURN_IF_ERR(idct_naive(d_pixels, d_coeffs, d_qtables, num_blocks_aligned, stream));

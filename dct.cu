@@ -363,9 +363,6 @@ bool idct_seperable(
     return true;
 }
 
-// TODO(nol) have one kernel in between to demonstrate that doing dequantization when loading
-//   decreases the PSNR? may not be needed when having a more stable PSNR measure
-
 namespace {
 
 constexpr int num_idct_blocks_per_thread_block_decomposed = 32; // tunable
@@ -1102,18 +1099,3 @@ bool idct_next16(
 
     return true;
 }
-
-// TODO ideas:
-// - consider half precision
-// - mix float and int ops
-// - store qtable as u8 if it fits
-// - create syntethic benchmark
-// - lock gpu clocks for benchmarking
-// - persist l2 for qtable?
-
-// https://www.sciencedirect.com/science/article/abs/pii/S0743731522000223
-// https://dl.acm.org/doi/pdf/10.5555/1553673.1608881
-
-// TODO
-// - finish throughput printing (also do write and explain why smaller)
-// - add cuda kernels (split into idct and quantization)
