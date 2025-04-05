@@ -23,6 +23,7 @@
 
 #include <cub/device/device_reduce.cuh>
 #include <cub/warp/warp_reduce.cuh>
+#include <thrust/iterator/zip_iterator.h>
 
 #include <cuda_runtime.h>
 
@@ -31,42 +32,17 @@
 
 namespace {
 
-constexpr int warp_size = 32;
-static_assert(dct_block_size % warp_size == 0);
-constexpr int elements_per_thread = dct_block_size / warp_size;
-
-constexpr int warps_per_thread_block = 8; // configurable
-constexpr int thread_block_size      = warps_per_thread_block * warp_size;
-
-__global__ void calc_max_squared_diff(
-    int* max_squared_diff_per_block,
-    const uint8_t* pixels_a,
-    const uint8_t* pixels_b,
-    int num_blocks)
+__global__ void calc_squared_diff(
+    uint16_t* squared_diff, const uint8_t* pixels_a, const uint8_t* pixels_b, int num_elements)
 {
-    assert(blockDim.x == thread_block_size);
-    const int tid = thread_block_size * blockIdx.x + threadIdx.x;
+    const int tid = blockDim.x * blockIdx.x + threadIdx.x;
 
-    if (elements_per_thread * tid >= num_blocks * dct_block_size) {
+    if (tid >= num_elements) {
         return;
     }
 
-    int sum_tid = 0;
-    for (int i = 0; i < elements_per_thread; ++i) {
-        const int diff_i =
-            pixels_a[elements_per_thread * tid + i] - pixels_b[elements_per_thread * tid + i];
-        sum_tid += diff_i * diff_i;
-    }
-
-    using warp_reduce = cub::WarpReduce<int>;
-
-    __shared__ typename warp_reduce::TempStorage temp_storage[warps_per_thread_block];
-
-    int warp_id       = threadIdx.x / 32;
-    int sum_dct_block = warp_reduce(temp_storage[warp_id]).Sum(sum_tid);
-    if (threadIdx.x % 32 == 0) {
-        max_squared_diff_per_block[tid / warp_size] = sum_dct_block;
-    }
+    const int diff    = int{pixels_a[tid]} - pixels_b[tid];
+    squared_diff[tid] = diff * diff;
 }
 
 } // namespace
@@ -82,48 +58,40 @@ bool psnr(
     assert(pixels_b.size() == num_blocks.size());
     const int num_components = vals.size();
 
-    // reduces 64 values per segment. max diff is 255, max squared diff is 65025.
-    //   max accumulated value is 4161600, which fits in 22 bits.
-    gpu_buf<int> d_max_squared_diff_per_block;
-
-    gpu_buf<int> d_max_squared_diff;
-
     gpu_buf<char> d_tmp;
+    gpu_buf<uint16_t> d_squared_diff;
+    gpu_buf<size_t> d_sum_squared_diff;
     for (int c = 0; c < num_components; ++c) {
-        const int num_blocks_c = num_blocks[c];
-        RETURN_IF_ERR(d_max_squared_diff_per_block.resize(num_blocks_c));
+        const int num_blocks_c   = num_blocks[c];
+        const int num_elements_c = dct_block_size * num_blocks_c;
 
-        const int num_elements_per_kernel_block = thread_block_size * elements_per_thread;
-        const int num_kernel_blocks =
-            (num_blocks_c * dct_block_size + num_elements_per_kernel_block - 1) /
-            num_elements_per_kernel_block;
+        RETURN_IF_ERR(d_squared_diff.resize(num_elements_c));
 
-        calc_max_squared_diff<<<num_kernel_blocks, thread_block_size, 0, nullptr>>>(
-            d_max_squared_diff_per_block.ptr, pixels_a[c].ptr, pixels_b[c].ptr, num_blocks_c);
+        const int kernel_block_size = 256;
+        const int num_kernel_blocks = (num_elements_c + kernel_block_size - 1) / kernel_block_size;
+
+        calc_squared_diff<<<num_kernel_blocks, kernel_block_size, 0, nullptr>>>(
+            d_squared_diff.ptr, pixels_a[c].ptr, pixels_b[c].ptr, num_elements_c);
         RETURN_IF_ERR_CUDA(cudaPeekAtLastError());
 
-        RETURN_IF_ERR(d_max_squared_diff.resize(1));
+        RETURN_IF_ERR(d_sum_squared_diff.resize(1));
 
         size_t num_tmp = 0;
-        RETURN_IF_ERR_CUDA(cub::DeviceReduce::Max(
-            nullptr,
-            num_tmp,
-            d_max_squared_diff_per_block.ptr,
-            d_max_squared_diff.ptr,
-            num_blocks_c));
+        RETURN_IF_ERR_CUDA(
+            cub::DeviceReduce::Sum(
+                nullptr, num_tmp, d_squared_diff.ptr, d_sum_squared_diff.ptr, num_elements_c));
         RETURN_IF_ERR(d_tmp.resize(num_tmp));
-        RETURN_IF_ERR_CUDA(cub::DeviceReduce::Max(
-            d_tmp.ptr,
-            num_tmp,
-            d_max_squared_diff_per_block.ptr,
-            d_max_squared_diff.ptr,
-            num_blocks_c));
+        RETURN_IF_ERR_CUDA(
+            cub::DeviceReduce::Sum(
+                d_tmp.ptr, num_tmp, d_squared_diff.ptr, d_sum_squared_diff.ptr, num_elements_c));
 
-        int h_max_squared_diff = 0;
+        size_t h_sum_squared_diff = 0;
         RETURN_IF_ERR_CUDA(cudaMemcpy(
-            &h_max_squared_diff, d_max_squared_diff.ptr, sizeof(int), cudaMemcpyDeviceToHost));
+            &h_sum_squared_diff, d_sum_squared_diff.ptr, sizeof(size_t), cudaMemcpyDeviceToHost));
 
-        vals[c] = 20.f * log10f(255.f) - 10.f * log10f((1.f / dct_block_size) * h_max_squared_diff);
+        const double mse = h_sum_squared_diff / static_cast<double>(num_elements_c);
+
+        vals[c] = 20. * log10(255.) - 10. * log10(mse);
     }
 
     return true;
